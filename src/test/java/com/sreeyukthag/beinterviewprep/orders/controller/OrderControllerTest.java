@@ -17,6 +17,7 @@ import com.sreeyukthag.beinterviewprep.orders.dto.response.OrderResponse;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.PlacedOrder;
 import com.sreeyukthag.beinterviewprep.orders.entity.OrderStatus;
 import com.sreeyukthag.beinterviewprep.orders.exception.IdempotencyKeyReusedException;
+import com.sreeyukthag.beinterviewprep.orders.exception.OrderAlreadyCancelledException;
 import com.sreeyukthag.beinterviewprep.orders.service.OrderService;
 import java.time.Instant;
 import java.util.List;
@@ -154,6 +155,41 @@ class OrderControllerTest {
         when(orderService.get(ORDER_ID)).thenThrow(new ResourceNotFoundException("Order", ORDER_ID));
 
         mockMvc.perform(get("/api/v1/orders/{id}", ORDER_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
+    }
+
+    @Test
+    void cancelReturnsTheCancelledOrder() throws Exception {
+        OrderResponse placed = sampleOrder();
+        OrderResponse cancelled = new OrderResponse(
+                placed.id(),
+                OrderStatus.CANCELLED,
+                placed.totalCents(),
+                placed.items(),
+                placed.createdAt(),
+                placed.updatedAt());
+        when(orderService.cancel(ORDER_ID)).thenReturn(cancelled);
+
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+    }
+
+    @Test
+    void cancellingTwiceReturns409() throws Exception {
+        when(orderService.cancel(ORDER_ID)).thenThrow(new OrderAlreadyCancelledException(ORDER_ID));
+
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("ORDER_ALREADY_CANCELLED"));
+    }
+
+    @Test
+    void cancellingAnUnknownOrderReturns404() throws Exception {
+        when(orderService.cancel(ORDER_ID)).thenThrow(new ResourceNotFoundException("Order", ORDER_ID));
+
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
     }

@@ -7,9 +7,14 @@ import com.sreeyukthag.beinterviewprep.orders.dto.request.PlaceOrderRequest;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.OrderResponse;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.PlacedOrder;
 import com.sreeyukthag.beinterviewprep.orders.entity.Order;
+import com.sreeyukthag.beinterviewprep.orders.entity.OrderItem;
+import com.sreeyukthag.beinterviewprep.orders.entity.OrderStatus;
 import com.sreeyukthag.beinterviewprep.orders.exception.IdempotencyKeyReusedException;
+import com.sreeyukthag.beinterviewprep.orders.exception.OrderAlreadyCancelledException;
 import com.sreeyukthag.beinterviewprep.orders.mapper.OrderMapper;
 import com.sreeyukthag.beinterviewprep.orders.repository.OrderRepository;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,8 +61,26 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public OrderResponse get(UUID id) {
-        return OrderMapper.toResponse(
-                orderRepository.findWithItemsById(id).orElseThrow(() -> new ResourceNotFoundException("Order", id)));
+        return OrderMapper.toResponse(find(id));
+    }
+
+    /** The status change and every stock release commit together, or not at all. */
+    @Transactional
+    public OrderResponse cancel(UUID id) {
+        if (orderRepository.transition(id, OrderStatus.PLACED, OrderStatus.CANCELLED, Instant.now()) == 0) {
+            throw orderRepository.existsById(id)
+                    ? new OrderAlreadyCancelledException(id)
+                    : new ResourceNotFoundException("Order", id);
+        }
+        Order order = find(id);
+        order.getItems().stream()
+                .sorted(Comparator.comparing(OrderItem::getProductId))
+                .forEach(item -> stockService.release(item.getProductId(), item.getQuantity()));
+        return OrderMapper.toResponse(order);
+    }
+
+    private Order find(UUID id) {
+        return orderRepository.findWithItemsById(id).orElseThrow(() -> new ResourceNotFoundException("Order", id));
     }
 
     private OrderResponse placeNew(String idempotencyKey, String fingerprint, List<OrderLine> lines) {

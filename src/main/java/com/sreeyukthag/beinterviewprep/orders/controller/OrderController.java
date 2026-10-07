@@ -50,4 +50,9 @@ public class OrderController {
     public ApiResponse<OrderResponse> get(@PathVariable UUID id) {
         return ApiResponse.ok(orderService.get(id));
     }
+
+    @PostMapping("/{id}/cancel")
+    public ApiResponse<OrderResponse> cancel(@PathVariable UUID id) {
+        return ApiResponse.ok(orderService.cancel(id));
+    }
 }

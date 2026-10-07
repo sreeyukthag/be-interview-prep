@@ -9,8 +9,12 @@ import com.sreeyukthag.beinterviewprep.common.exception.ConflictException;
 import com.sreeyukthag.beinterviewprep.common.exception.ResourceNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.mapping.PropertyReferenceException;
+import org.springframework.data.util.TypeInformation;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,6 +48,33 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void unparseableFieldValueReturns400NamingTheField() throws Exception {
+        String body = "{\"name\":\"x\",\"level\":\"EXTREME\"}";
+
+        mockMvc.perform(post("/stub").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("level"))
+                .andExpect(jsonPath("$.errors[0].message").value("has an invalid value"));
+    }
+
+    @Test
+    void unknownSortPropertyReturns400() throws Exception {
+        mockMvc.perform(get("/stub/unknown-sort"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("sort"))
+                .andExpect(jsonPath("$.errors[0].message").value("has an unknown property: nope"));
+    }
+
+    @Test
+    void optimisticLockConflictReturns409() throws Exception {
+        mockMvc.perform(get("/stub/stale"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("CONCURRENT_MODIFICATION"));
+    }
+
+    @Test
     void apiExceptionUsesItsOwnStatusAndCode() throws Exception {
         mockMvc.perform(get("/stub/missing"))
                 .andExpect(status().isNotFound())
@@ -63,7 +94,12 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
     }
 
-    record StubRequest(@NotBlank String name) {}
+    enum Level {
+        LOW,
+        HIGH
+    }
+
+    record StubRequest(@NotBlank String name, Level level) {}
 
     @RestController
     static class StubController {
@@ -78,6 +114,9 @@ class GlobalExceptionHandlerTest {
             return switch (id) {
                 case "missing" -> throw new ResourceNotFoundException("Stub", id);
                 case "taken" -> throw new ConflictException("TAKEN", "Stub already exists");
+                case "stale" -> throw new ObjectOptimisticLockingFailureException(StubRequest.class, id);
+                case "unknown-sort" ->
+                    throw new PropertyReferenceException("nope", TypeInformation.of(StubRequest.class), List.of());
                 case "boom" -> throw new IllegalStateException("database password leaked here");
                 default -> ApiResponse.ok(id);
             };

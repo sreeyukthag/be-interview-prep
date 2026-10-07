@@ -16,6 +16,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+// Writes use saveAndFlush: Hibernate fills the audit timestamps when the SQL runs, which a UUID-keyed entity
+// otherwise defers to commit, after the response has been mapped.
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -27,7 +29,7 @@ public class TaskService {
         TaskStatus status = request.status() == null ? TaskStatus.TODO : request.status();
         Task task = new Task(request.title(), request.description(), status, request.dueDate());
 
-        return TaskMapper.toResponse(taskRepository.save(task));
+        return TaskMapper.toResponse(taskRepository.saveAndFlush(task));
     }
 
     @Transactional(readOnly = true)
@@ -47,7 +49,6 @@ public class TaskService {
         Task task = findTask(id);
         task.update(request.title(), request.description(), request.status(), request.dueDate());
 
-        // Flushing here fills updatedAt for the response and surfaces a version conflict before mapping.
         return TaskMapper.toResponse(taskRepository.saveAndFlush(task));
     }
 

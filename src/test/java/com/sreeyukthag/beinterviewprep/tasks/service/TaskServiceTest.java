@@ -42,7 +42,7 @@ class TaskServiceTest {
     @Test
     void createDefaultsStatusToTodo() {
         CreateTaskRequest request = new CreateTaskRequest("Write spec", "First draft", null, TOMORROW);
-        when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.saveAndFlush(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TaskResponse response = taskService.create(request);
 
@@ -55,7 +55,7 @@ class TaskServiceTest {
     @Test
     void createKeepsAnExplicitStatus() {
         CreateTaskRequest request = new CreateTaskRequest("Write spec", null, TaskStatus.IN_PROGRESS, null);
-        when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.saveAndFlush(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TaskResponse response = taskService.create(request);
 

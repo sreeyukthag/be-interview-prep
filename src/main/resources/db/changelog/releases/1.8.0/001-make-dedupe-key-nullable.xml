@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- Custom-code aliases store NULL: the unique index ignores NULLs, so only generated codes are deduplicated. -->
+    <changeSet id="1.8.0-001-make-dedupe-key-nullable" author="sreeyukthag">
+        <dropNotNullConstraint tableName="short_urls" columnName="dedupe_key" columnDataType="CHAR(64)"/>
+    </changeSet>
+</databaseChangeLog>

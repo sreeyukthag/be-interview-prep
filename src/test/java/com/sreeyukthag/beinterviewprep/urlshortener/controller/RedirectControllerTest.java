@@ -11,11 +11,13 @@ import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortUrlExpiredExc
 import com.sreeyukthag.beinterviewprep.urlshortener.service.ShortUrlService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(RedirectController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class RedirectControllerTest {
 
     @Autowired

@@ -13,3 +13,8 @@ spring:
 app:
   short-url:
     base-url: http://sho.rt/r/
+  security:
+    jwt:
+      # Random per test run, so no signing key is ever committed.
+      secret: ${random.value}${random.value}
+      ttl: 15m

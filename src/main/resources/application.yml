@@ -23,3 +23,10 @@ management:
 app:
   short-url:
     base-url: ${SHORT_URL_BASE:http://localhost:8080/r/}
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      ttl: 15m
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}

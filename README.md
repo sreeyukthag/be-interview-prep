@@ -12,6 +12,13 @@ Five Spring Boot features, each shipped as its own branch, pull request and merg
 
 Video:
 
+### Optional extras
+
+| Q | Extra | PR link |
+|---|---|---|
+| 1 | Interactive API docs (Swagger UI at `/swagger-ui.html`) | [#8](https://github.com/sreeyukthag/be-interview-prep/pull/8) |
+| 2 | Custom short codes (`customCode` on `POST /api/v1/urls`) | [#9](https://github.com/sreeyukthag/be-interview-prep/pull/9) |
+
 ## Stack
 
 Java 21, Spring Boot 3.5, Maven (wrapper included), PostgreSQL 17 in Docker, Liquibase XML migrations,

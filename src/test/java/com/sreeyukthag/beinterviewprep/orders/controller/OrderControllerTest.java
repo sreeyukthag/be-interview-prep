@@ -2,6 +2,8 @@ package com.sreeyukthag.beinterviewprep.orders.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -27,14 +29,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.test.context.TestSecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(OrderController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class OrderControllerTest {
 
+    private static final UUID CUSTOMER_ID = UUID.fromString("3b0c8f9e-6d2a-4f1e-9a57-2c4e8d1b7f60");
     private static final UUID ORDER_ID = UUID.fromString("6f1c2a52-1d1e-4c39-9d8f-0f3a1f0f6b10");
     private static final UUID PRODUCT_ID = UUID.fromString("8aa10fd1-20a5-5dea-88e0-ffd88a8d048b");
     private static final String KEY = "0b9f6a4e-5d0c-4f43-a8a8-1c2d3e4f5a6b";
@@ -50,7 +57,7 @@ class OrderControllerTest {
 
     @Test
     void placeReturns201WithLocation() throws Exception {
-        when(orderService.place(eq(KEY), any())).thenReturn(PlacedOrder.created(sampleOrder()));
+        when(orderService.place(eq(CUSTOMER_ID), eq(KEY), any())).thenReturn(PlacedOrder.created(sampleOrder()));
 
         mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
                 .andExpect(status().isCreated())
@@ -62,8 +69,22 @@ class OrderControllerTest {
     }
 
     @Test
+    void customerComesFromTheTokenNotTheBody() throws Exception {
+        UUID someoneElse = UUID.randomUUID();
+        String body = """
+                {"customerId":"%s","items":[{"productId":"8aa10fd1-20a5-5dea-88e0-ffd88a8d048b","quantity":2}]}
+                """.formatted(someoneElse);
+        when(orderService.place(eq(CUSTOMER_ID), eq(KEY), any())).thenReturn(PlacedOrder.created(sampleOrder()));
+
+        mockMvc.perform(placeRequest(body).header("Idempotency-Key", KEY)).andExpect(status().isCreated());
+
+        verify(orderService).place(eq(CUSTOMER_ID), eq(KEY), any());
+        verify(orderService, never()).place(eq(someoneElse), any(), any());
+    }
+
+    @Test
     void replayedOrderReturns200WithTheExistingOrder() throws Exception {
-        when(orderService.place(eq(KEY), any())).thenReturn(PlacedOrder.replayed(sampleOrder()));
+        when(orderService.place(eq(CUSTOMER_ID), eq(KEY), any())).thenReturn(PlacedOrder.replayed(sampleOrder()));
 
         mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
                 .andExpect(status().isOk())
@@ -74,7 +95,7 @@ class OrderControllerTest {
 
     @Test
     void reusedKeyWithADifferentBodyReturns422() throws Exception {
-        when(orderService.place(eq(KEY), any())).thenThrow(new IdempotencyKeyReusedException(KEY));
+        when(orderService.place(eq(CUSTOMER_ID), eq(KEY), any())).thenThrow(new IdempotencyKeyReusedException(KEY));
 
         mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
                 .andExpect(status().isUnprocessableEntity())
@@ -130,7 +151,7 @@ class OrderControllerTest {
 
     @Test
     void insufficientStockReturns409() throws Exception {
-        when(orderService.place(eq(KEY), any()))
+        when(orderService.place(eq(CUSTOMER_ID), eq(KEY), any()))
                 .thenThrow(new InsufficientStockException(PRODUCT_ID, "Desk Lamp", 2, 1));
 
         mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
@@ -197,7 +218,25 @@ class OrderControllerTest {
     }
 
     private static MockHttpServletRequestBuilder placeRequest(String body) {
-        return post("/api/v1/orders").contentType(MediaType.APPLICATION_JSON).content(body);
+        return post("/api/v1/orders")
+                .with(authenticatedAs(CUSTOMER_ID))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+    }
+
+    /**
+     * The slice runs without the security filters, so {@code jwt()} would never reach the controller; putting the
+     * token straight into the test security context is what {@code @AuthenticationPrincipal} reads.
+     */
+    private static RequestPostProcessor authenticatedAs(UUID userId) {
+        return request -> {
+            Jwt jwt = Jwt.withTokenValue("test-token")
+                    .header("alg", "HS256")
+                    .subject(userId.toString())
+                    .build();
+            TestSecurityContextHolder.setAuthentication(new JwtAuthenticationToken(jwt));
+            return request;
+        };
     }
 
     private static OrderResponse sampleOrder() {

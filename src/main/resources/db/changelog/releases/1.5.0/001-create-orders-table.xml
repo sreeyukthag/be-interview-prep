@@ -10,6 +10,10 @@
             <column name="id" type="UUID">
                 <constraints primaryKey="true" primaryKeyName="pk_orders"/>
             </column>
+            <!-- The user id from the access token. No foreign key to users: that table belongs to the auth module. -->
+            <column name="customer_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
             <column name="status" type="VARCHAR(20)">
                 <constraints nullable="false"/>
             </column>

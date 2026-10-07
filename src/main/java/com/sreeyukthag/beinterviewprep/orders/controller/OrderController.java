@@ -11,6 +11,8 @@ import java.net.URI;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,8 +38,9 @@ public class OrderController {
                             regexp = "[A-Za-z0-9_-]{1,64}",
                             message = "must be 1-64 letters, digits, '-' or '_' (a UUID works)")
                     String idempotencyKey,
-            @Valid @RequestBody PlaceOrderRequest request) {
-        PlacedOrder placed = orderService.place(idempotencyKey, request);
+            @Valid @RequestBody PlaceOrderRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        PlacedOrder placed = orderService.place(customerId(jwt), idempotencyKey, request);
         if (placed.replayed()) {
             return ResponseEntity.ok().header(REPLAYED_HEADER, "true").body(ApiResponse.ok(placed.order()));
         }
@@ -54,5 +57,10 @@ public class OrderController {
     @PostMapping("/{id}/cancel")
     public ApiResponse<OrderResponse> cancel(@PathVariable UUID id) {
         return ApiResponse.ok(orderService.cancel(id));
+    }
+
+    /** The token's subject is the user id; the customer is never taken from the body, path or a header. */
+    private static UUID customerId(Jwt jwt) {
+        return UUID.fromString(jwt.getSubject());
     }
 }

@@ -28,6 +28,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 class OrderCancellationTest {
 
+    private static final UUID CUSTOMER_ID = UUID.randomUUID();
+
     @Autowired
     private OrderService orderService;
 
@@ -104,10 +106,13 @@ class OrderCancellationTest {
     void retryingACancelledOrdersRequestDoesNotReserveAgain() {
         UUID productId = createProduct(5);
         String key = UUID.randomUUID().toString();
-        UUID orderId = orderService.place(key, request(productId, 2)).order().id();
+        UUID orderId = orderService
+                .place(CUSTOMER_ID, key, request(productId, 2))
+                .order()
+                .id();
         orderService.cancel(orderId);
 
-        PlacedOrder retry = orderService.place(key, request(productId, 2));
+        PlacedOrder retry = orderService.place(CUSTOMER_ID, key, request(productId, 2));
 
         assertThat(retry.replayed()).isTrue();
         assertThat(retry.order().status()).isEqualTo(OrderStatus.CANCELLED);
@@ -138,7 +143,7 @@ class OrderCancellationTest {
     }
 
     private PlacedOrder place(PlaceOrderRequest request) {
-        return orderService.place(UUID.randomUUID().toString(), request);
+        return orderService.place(CUSTOMER_ID, UUID.randomUUID().toString(), request);
     }
 
     private static PlaceOrderRequest request(UUID productId, int quantity) {

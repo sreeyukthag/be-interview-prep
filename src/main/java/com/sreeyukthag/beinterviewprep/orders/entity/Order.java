@@ -22,6 +22,9 @@ import lombok.NoArgsConstructor;
 @Table(name = "orders")
 public class Order extends BaseEntity {
 
+    @Column(name = "customer_id", nullable = false, updatable = false)
+    private UUID customerId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OrderStatus status;
@@ -42,8 +45,9 @@ public class Order extends BaseEntity {
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
 
-    public static Order placed(String idempotencyKey, String requestHash) {
+    public static Order placed(UUID customerId, String idempotencyKey, String requestHash) {
         Order order = new Order();
+        order.customerId = customerId;
         order.status = OrderStatus.PLACED;
         order.idempotencyKey = idempotencyKey;
         order.requestHash = requestHash;

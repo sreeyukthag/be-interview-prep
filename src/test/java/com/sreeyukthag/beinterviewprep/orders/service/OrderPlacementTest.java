@@ -30,6 +30,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @SpringBootTest
 class OrderPlacementTest {
 
+    private static final UUID CUSTOMER_ID = UUID.randomUUID();
+
     @Autowired
     private OrderService orderService;
 
@@ -52,7 +54,7 @@ class OrderPlacementTest {
             customers.add(() -> {
                 start.await();
                 try {
-                    orderService.place(UUID.randomUUID().toString(), oneUnit);
+                    orderService.place(CUSTOMER_ID, UUID.randomUUID().toString(), oneUnit);
                     return "placed";
                 } catch (InsufficientStockException ex) {
                     return "out-of-stock";
@@ -75,8 +77,9 @@ class OrderPlacementTest {
         PlaceOrderRequest request = new PlaceOrderRequest(
                 List.of(new OrderItemRequest(lamp, 2), new OrderItemRequest(mug, 1), new OrderItemRequest(lamp, 1)));
 
-        OrderResponse order =
-                orderService.place(UUID.randomUUID().toString(), request).order();
+        OrderResponse order = orderService
+                .place(CUSTOMER_ID, UUID.randomUUID().toString(), request)
+                .order();
 
         assertThat(order.status()).isEqualTo(OrderStatus.PLACED);
         assertThat(order.totalCents()).isEqualTo(3 * 1_500 + 400);
@@ -100,7 +103,7 @@ class OrderPlacementTest {
 
         InsufficientStockException ex = assertThrows(
                 InsufficientStockException.class,
-                () -> orderService.place(UUID.randomUUID().toString(), request));
+                () -> orderService.place(CUSTOMER_ID, UUID.randomUUID().toString(), request));
 
         assertThat(ex.getMessage()).contains(scarce.toString(), "requested 2", "available 1");
         assertThat(stockOf(available)).isEqualTo(5);
@@ -116,7 +119,7 @@ class OrderPlacementTest {
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> orderService.place(UUID.randomUUID().toString(), request));
+                () -> orderService.place(CUSTOMER_ID, UUID.randomUUID().toString(), request));
 
         assertThat(stockOf(available)).isEqualTo(5);
     }
@@ -126,7 +129,7 @@ class OrderPlacementTest {
         UUID productId = createProduct(5, 100);
         productService.get(productId);
 
-        orderService.place(UUID.randomUUID().toString(), request(productId, 2));
+        orderService.place(CUSTOMER_ID, UUID.randomUUID().toString(), request(productId, 2));
 
         assertThat(productService.get(productId).stock()).isEqualTo(3);
     }

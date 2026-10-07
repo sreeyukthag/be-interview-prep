@@ -40,7 +40,7 @@ public class OrderService {
      * winner's order. Even {@code Propagation.NEVER} would hold the lookup's connection while the placement borrows
      * a second one, which exhausts the pool under load.
      */
-    public PlacedOrder place(String idempotencyKey, PlaceOrderRequest request) {
+    public PlacedOrder place(UUID customerId, String idempotencyKey, PlaceOrderRequest request) {
         List<OrderLine> lines = OrderLine.normalise(request.items());
         String fingerprint = OrderLine.fingerprint(lines);
         Optional<Order> existing = orderRepository.findWithItemsByIdempotencyKey(idempotencyKey);
@@ -49,7 +49,7 @@ public class OrderService {
         }
         try {
             return PlacedOrder.created(
-                    transactionTemplate.execute(status -> placeNew(idempotencyKey, fingerprint, lines)));
+                    transactionTemplate.execute(status -> placeNew(customerId, idempotencyKey, fingerprint, lines)));
         } catch (DataIntegrityViolationException ex) {
             Order winner = orderRepository
                     .findWithItemsByIdempotencyKey(idempotencyKey)
@@ -83,8 +83,8 @@ public class OrderService {
         return orderRepository.findWithItemsById(id).orElseThrow(() -> new ResourceNotFoundException("Order", id));
     }
 
-    private OrderResponse placeNew(String idempotencyKey, String fingerprint, List<OrderLine> lines) {
-        Order order = Order.placed(idempotencyKey, fingerprint);
+    private OrderResponse placeNew(UUID customerId, String idempotencyKey, String fingerprint, List<OrderLine> lines) {
+        Order order = Order.placed(customerId, idempotencyKey, fingerprint);
         for (OrderLine line : lines) {
             ReservedItem reserved = stockService.reserve(line.productId(), line.quantity());
             order.addItem(reserved.productId(), reserved.quantity(), reserved.unitPriceCents());

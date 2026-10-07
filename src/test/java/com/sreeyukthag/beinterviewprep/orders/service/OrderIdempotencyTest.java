@@ -7,7 +7,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
+import com.sreeyukthag.beinterviewprep.auth.AuthTestClient;
 import com.sreeyukthag.beinterviewprep.catalog.dto.request.ProductRequest;
 import com.sreeyukthag.beinterviewprep.catalog.repository.ProductRepository;
 import com.sreeyukthag.beinterviewprep.catalog.service.ProductService;
@@ -27,15 +29,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@WithMockUser
 class OrderIdempotencyTest {
+
+    private static final UUID CUSTOMER_ID = UUID.randomUUID();
 
     @Autowired
     private OrderService orderService;
@@ -52,15 +55,20 @@ class OrderIdempotencyTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Test
     void retryingTheSameRequestOverHttpCreatesOneOrder() throws Exception {
         UUID productId = createProduct(5);
+        String token = new AuthTestClient(mockMvc, objectMapper).registerAndLogin(AuthTestClient.uniqueEmail());
         String key = UUID.randomUUID().toString();
         String body = """
                 {"items":[{"productId":"%s","quantity":2}]}
                 """.formatted(productId);
 
         String first = mockMvc.perform(post("/api/v1/orders")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -70,6 +78,7 @@ class OrderIdempotencyTest {
                 .getContentAsString();
         String firstId = JsonPath.read(first, "$.data.id");
         mockMvc.perform(post("/api/v1/orders")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -91,8 +100,8 @@ class OrderIdempotencyTest {
         PlaceOrderRequest reordered =
                 new PlaceOrderRequest(List.of(new OrderItemRequest(mug, 2), new OrderItemRequest(lamp, 1)));
 
-        PlacedOrder first = orderService.place(key, original);
-        PlacedOrder retry = orderService.place(key, reordered);
+        PlacedOrder first = orderService.place(CUSTOMER_ID, key, original);
+        PlacedOrder retry = orderService.place(CUSTOMER_ID, key, reordered);
 
         assertThat(retry.replayed()).isTrue();
         assertThat(retry.order().id()).isEqualTo(first.order().id());
@@ -104,9 +113,10 @@ class OrderIdempotencyTest {
     void reusingAKeyForDifferentItemsIsRejectedWithoutTouchingStock() {
         UUID productId = createProduct(5);
         String key = UUID.randomUUID().toString();
-        orderService.place(key, request(productId, 1));
+        orderService.place(CUSTOMER_ID, key, request(productId, 1));
 
-        assertThrows(IdempotencyKeyReusedException.class, () -> orderService.place(key, request(productId, 2)));
+        assertThrows(
+                IdempotencyKeyReusedException.class, () -> orderService.place(CUSTOMER_ID, key, request(productId, 2)));
 
         assertThat(stockOf(productId)).isEqualTo(4);
         assertThat(ordersWithKey(key)).isEqualTo(1);
@@ -122,7 +132,7 @@ class OrderIdempotencyTest {
         for (int i = 0; i < 10; i++) {
             retries.add(() -> {
                 start.await();
-                return orderService.place(key, request);
+                return orderService.place(CUSTOMER_ID, key, request);
             });
         }
 

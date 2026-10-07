@@ -9,3 +9,7 @@ spring:
       ddl-auto: validate
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
+
+app:
+  short-url:
+    base-url: http://sho.rt/r/

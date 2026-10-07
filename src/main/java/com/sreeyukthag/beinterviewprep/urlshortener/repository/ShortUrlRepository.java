@@ -12,8 +12,6 @@ public interface ShortUrlRepository extends JpaRepository<ShortUrl, UUID> {
 
     Optional<ShortUrl> findByCode(String code);
 
-    boolean existsByCode(String code);
-
     Optional<ShortUrl> findByDedupeKey(String dedupeKey);
 
     /** Increments in the database so concurrent visits never overwrite each other's count. */

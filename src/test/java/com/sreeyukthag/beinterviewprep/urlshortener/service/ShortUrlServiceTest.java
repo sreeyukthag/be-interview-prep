@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sreeyukthag.beinterviewprep.common.exception.ResourceNotFoundException;
@@ -14,6 +15,7 @@ import com.sreeyukthag.beinterviewprep.urlshortener.dto.request.ShortenUrlReques
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlStatsResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
+import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortCodeUnavailableException;
 import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortUrlExpiredException;
 import com.sreeyukthag.beinterviewprep.urlshortener.mapper.ShortUrlMapper;
 import com.sreeyukthag.beinterviewprep.urlshortener.repository.ShortUrlRepository;
@@ -26,11 +28,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 
 @ExtendWith(MockitoExtension.class)
 class ShortUrlServiceTest {
 
     private static final String URL = "https://example.com/a/very/long/path";
+    private static final String DEDUPE_KEY = ShortUrl.dedupeKeyFor(URL, null);
 
     @Mock
     private ShortUrlRepository repository;
@@ -38,19 +43,21 @@ class ShortUrlServiceTest {
     @Mock
     private ShortCodeGenerator codeGenerator;
 
+    @Mock
+    private ShortUrlWriter writer;
+
     private ShortUrlService service;
 
     @BeforeEach
     void setUp() {
-        service = new ShortUrlService(repository, codeGenerator, new ShortUrlMapper("http://sho.rt/r"));
+        service = new ShortUrlService(repository, codeGenerator, writer, new ShortUrlMapper("http://sho.rt/r"));
     }
 
     @Test
     void shortenStoresNewMappingWithGeneratedCode() {
-        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, null))).thenReturn(Optional.empty());
+        when(repository.findByDedupeKey(DEDUPE_KEY)).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("abc1234");
-        when(repository.existsByCode("abc1234")).thenReturn(false);
-        when(repository.save(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(writer.insert(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null));
 
@@ -69,36 +76,52 @@ class ShortUrlServiceTest {
         ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, expiresAt));
 
         assertThat(response.code()).isEqualTo("exist12");
-        verify(repository, never()).save(any());
-        verify(codeGenerator, never()).generate();
+        verifyNoInteractions(writer, codeGenerator);
     }
 
     @Test
-    void shortenRetriesWhenGeneratedCodeIsTaken() {
-        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, null))).thenReturn(Optional.empty());
+    void shortenReturnsRowStoredByConcurrentRequestWhenInsertConflicts() {
+        ShortUrl winner = new ShortUrl("winner1", URL, null);
+        when(repository.findByDedupeKey(DEDUPE_KEY)).thenReturn(Optional.empty(), Optional.of(winner));
+        when(codeGenerator.generate()).thenReturn("loser01");
+        when(writer.insert(any(ShortUrl.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_short_urls_dedupe_key"));
+
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null));
+
+        assertThat(response.code()).isEqualTo("winner1");
+        verify(writer, times(1)).insert(any());
+    }
+
+    @Test
+    void shortenRetriesWithNewCodeWhenCodeIsTaken() {
+        when(repository.findByDedupeKey(DEDUPE_KEY)).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("taken01", "free001");
-        when(repository.existsByCode("taken01")).thenReturn(true);
-        when(repository.existsByCode("free001")).thenReturn(false);
-        when(repository.save(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(writer.insert(any(ShortUrl.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_short_urls_code"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.shorten(new ShortenUrlRequest(URL, null));
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null));
 
-        ArgumentCaptor<ShortUrl> saved = ArgumentCaptor.forClass(ShortUrl.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getCode()).isEqualTo("free001");
+        assertThat(response.code()).isEqualTo("free001");
+        ArgumentCaptor<ShortUrl> attempts = ArgumentCaptor.forClass(ShortUrl.class);
+        verify(writer, times(2)).insert(attempts.capture());
+        assertThat(attempts.getAllValues()).extracting(ShortUrl::getCode).containsExactly("taken01", "free001");
     }
 
     @Test
-    void shortenGivesUpAfterMaxCollisions() {
-        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, null))).thenReturn(Optional.empty());
+    void shortenGivesUpWithServiceUnavailableAfterMaxAttempts() {
+        when(repository.findByDedupeKey(DEDUPE_KEY)).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("taken01");
-        when(repository.existsByCode(anyString())).thenReturn(true);
+        when(writer.insert(any(ShortUrl.class))).thenThrow(new DataIntegrityViolationException("uk_short_urls_code"));
         ShortenUrlRequest request = new ShortenUrlRequest(URL, null);
 
-        assertThrows(IllegalStateException.class, () -> service.shorten(request));
+        ShortCodeUnavailableException ex =
+                assertThrows(ShortCodeUnavailableException.class, () -> service.shorten(request));
 
-        verify(codeGenerator, times(ShortUrlService.MAX_CODE_ATTEMPTS)).generate();
-        verify(repository, never()).save(any());
+        assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(ex.getErrorCode()).isEqualTo("SHORT_CODE_UNAVAILABLE");
+        verify(writer, times(ShortUrlService.MAX_INSERT_ATTEMPTS)).insert(any());
     }
 
     @Test

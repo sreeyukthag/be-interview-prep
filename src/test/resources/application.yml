@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:testdb-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
     username: sa
     password: ""
   jpa:
@@ -18,3 +18,12 @@ spring:
       spec: maximumSize=1000,expireAfterWrite=10m,recordStats
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
+
+app:
+  short-url:
+    base-url: http://sho.rt/r/
+  security:
+    jwt:
+      # Random per test run, so no signing key is ever committed.
+      secret: ${random.value}${random.value}
+      ttl: 15m

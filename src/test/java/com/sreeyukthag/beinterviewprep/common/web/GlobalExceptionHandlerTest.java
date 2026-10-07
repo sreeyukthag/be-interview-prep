@@ -48,6 +48,15 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void unsupportedContentTypeReturns415() throws Exception {
+        mockMvc.perform(post("/stub").contentType(MediaType.TEXT_PLAIN).content("name"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("UNSUPPORTED_MEDIA_TYPE"))
+                .andExpect(jsonPath("$.message").value("Content-Type 'text/plain' is not supported"));
+    }
+
+    @Test
     void unparseableFieldValueReturns400NamingTheField() throws Exception {
         String body = "{\"name\":\"x\",\"level\":\"EXTREME\"}";
 

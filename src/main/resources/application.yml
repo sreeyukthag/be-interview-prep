@@ -15,6 +15,11 @@ spring:
     web:
       pageable:
         max-page-size: 100
+  cache:
+    type: caffeine
+    cache-names: products
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=10m,recordStats
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
 
@@ -22,4 +27,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,caches,metrics

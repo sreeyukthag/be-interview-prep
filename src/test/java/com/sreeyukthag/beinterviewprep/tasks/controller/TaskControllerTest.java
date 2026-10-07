@@ -1,6 +1,7 @@
 package com.sreeyukthag.beinterviewprep.tasks.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.endsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -181,6 +182,149 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.errorCode").value("MALFORMED_REQUEST"));
 
         verify(taskService, never()).create(any());
+    }
+
+    @Test
+    void createWithoutTitleReturns400WithFieldError() throws Exception {
+        String body = """
+                {"description":"No title"}
+                """;
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("title"))
+                .andExpect(jsonPath("$.errors[0].message").value("is required"));
+
+        verify(taskService, never()).create(any());
+    }
+
+    @Test
+    void createWithBlankTitleReturns400() throws Exception {
+        String body = """
+                {"title":"   "}
+                """;
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("title"));
+    }
+
+    @Test
+    void createWithTitleOver100CharactersReturns400() throws Exception {
+        String body = """
+                {"title":"%s"}
+                """.formatted("a".repeat(101));
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("title"))
+                .andExpect(jsonPath("$.errors[0].message").value("must be at most 100 characters"));
+    }
+
+    @Test
+    void createWithTitleOfExactly100CharactersIsAccepted() throws Exception {
+        when(taskService.create(any(CreateTaskRequest.class))).thenReturn(task(TaskStatus.TODO));
+        String body = """
+                {"title":"%s"}
+                """.formatted("a".repeat(100));
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createWithPastDueDateReturns400() throws Exception {
+        String body = """
+                {"title":"Write spec","dueDate":"%s"}
+                """.formatted(LocalDate.now().minusDays(1));
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("dueDate"))
+                .andExpect(jsonPath("$.errors[0].message").value("must not be in the past"));
+
+        verify(taskService, never()).create(any());
+    }
+
+    @Test
+    void createWithTodayAsDueDateIsAccepted() throws Exception {
+        when(taskService.create(any(CreateTaskRequest.class))).thenReturn(task(TaskStatus.TODO));
+        String body = """
+                {"title":"Write spec","dueDate":"%s"}
+                """.formatted(LocalDate.now());
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createWithDescriptionOver1000CharactersReturns400() throws Exception {
+        String body = """
+                {"title":"Write spec","description":"%s"}
+                """.formatted("d".repeat(1001));
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("description"));
+    }
+
+    @Test
+    void createReportsEveryInvalidField() throws Exception {
+        String body = """
+                {"title":"%s","dueDate":"%s"}
+                """.formatted("a".repeat(101), LocalDate.now().minusDays(1));
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.length()").value(2))
+                .andExpect(jsonPath("$.errors[*].field", containsInAnyOrder("title", "dueDate")));
+    }
+
+    @Test
+    void updateWithoutStatusReturns400() throws Exception {
+        String body = """
+                {"title":"Write spec"}
+                """;
+
+        mockMvc.perform(put("/api/v1/tasks/{id}", ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("status"))
+                .andExpect(jsonPath("$.errors[0].message").value("is required"));
+
+        verify(taskService, never()).update(any(), any());
+    }
+
+    @Test
+    void updateWithPastDueDateReturns400() throws Exception {
+        String body = """
+                {"title":"Write spec","status":"DONE","dueDate":"%s"}
+                """.formatted(LocalDate.now().minusDays(1));
+
+        mockMvc.perform(put("/api/v1/tasks/{id}", ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("dueDate"));
     }
 
     private static TaskResponse task(TaskStatus status) {

@@ -7,6 +7,7 @@ import com.sreeyukthag.beinterviewprep.tasks.dto.request.UpdateTaskRequest;
 import com.sreeyukthag.beinterviewprep.tasks.dto.response.TaskResponse;
 import com.sreeyukthag.beinterviewprep.tasks.entity.TaskStatus;
 import com.sreeyukthag.beinterviewprep.tasks.service.TaskService;
+import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +34,7 @@ public class TaskController {
     private final TaskService taskService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<TaskResponse>> create(@RequestBody CreateTaskRequest request) {
+    public ResponseEntity<ApiResponse<TaskResponse>> create(@Valid @RequestBody CreateTaskRequest request) {
         TaskResponse task = taskService.create(request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
@@ -56,7 +57,7 @@ public class TaskController {
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<TaskResponse> update(@PathVariable UUID id, @RequestBody UpdateTaskRequest request) {
+    public ApiResponse<TaskResponse> update(@PathVariable UUID id, @Valid @RequestBody UpdateTaskRequest request) {
         return ApiResponse.ok(taskService.update(id, request));
     }
 

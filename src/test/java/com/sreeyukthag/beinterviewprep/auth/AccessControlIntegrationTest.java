@@ -2,6 +2,7 @@ package com.sreeyukthag.beinterviewprep.auth;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -15,6 +16,8 @@ import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -128,6 +131,39 @@ class AccessControlIntegrationTest {
     @Test
     void healthCheckIsPublic() throws Exception {
         mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/tasks", "/api/v1/urls/abc1234/stats"})
+    void featureEndpointsRequireAToken(String path) throws Exception {
+        mockMvc.perform(get(path))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void shorteningAUrlRequiresAToken() throws Exception {
+        String body = "{\"url\":\"https://example.com\"}";
+
+        mockMvc.perform(post("/api/v1/urls")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void loggedInUserCanUseFeatureEndpoints() throws Exception {
+        String token = client.registerAndLogin(AuthTestClient.uniqueEmail());
+
+        mockMvc.perform(get("/api/v1/tasks").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void shortLinkRedirectsArePublic() throws Exception {
+        mockMvc.perform(get("/r/unknown1"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
     }
 
     private static String bearer(String token) {

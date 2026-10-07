@@ -40,14 +40,15 @@ No secret has a default in source; the app fails to start without `JWT_SECRET`.
 
 ### Calling the API
 
-Everything except register/login, redirects, health and product reads needs a bearer token:
+Tasks, the URL shortener (including redirects), register/login, health and product reads are public.
+Everything else needs a bearer token:
 
 ```bash
 curl -X POST localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' \
   -d '{"email":"user@example.com","password":"password123"}'
 TOKEN=$(curl -s -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"user@example.com","password":"password123"}' | jq -r '.data.accessToken')
-curl localhost:8080/api/v1/tasks -H "Authorization: Bearer $TOKEN"
+curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ```
 
 Tokens expire after 15 minutes. Admin-only routes need the `ADMIN_EMAIL` account.

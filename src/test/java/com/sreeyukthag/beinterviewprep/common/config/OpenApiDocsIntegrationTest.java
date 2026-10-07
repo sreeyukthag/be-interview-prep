@@ -49,6 +49,6 @@ class OpenApiDocsIntegrationTest {
 
     @Test
     void docsPermitDoesNotOpenTheApi() throws Exception {
-        mockMvc.perform(get("/api/v1/tasks")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/users/me")).andExpect(status().isUnauthorized());
     }
 }

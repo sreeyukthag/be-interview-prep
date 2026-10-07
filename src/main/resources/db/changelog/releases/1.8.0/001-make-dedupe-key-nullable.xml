@@ -5,7 +5,8 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
             http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
-    <changeSet id="1.7.0-tag" author="sreeyukthag">
-        <tagDatabase tag="1.7.0"/>
+    <!-- Custom-code aliases store NULL: the unique index ignores NULLs, so only generated codes are deduplicated. -->
+    <changeSet id="1.8.0-001-make-dedupe-key-nullable" author="sreeyukthag">
+        <dropNotNullConstraint tableName="short_urls" columnName="dedupe_key" columnDataType="CHAR(64)"/>
     </changeSet>
 </databaseChangeLog>

@@ -52,6 +52,12 @@ curl localhost:8080/api/v1/tasks -H "Authorization: Bearer $TOKEN"
 
 Tokens expire after 15 minutes. Admin-only routes need the `ADMIN_EMAIL` account.
 
+### Interactive API docs
+
+With the app running, open <http://localhost:8080/swagger-ui.html> (the raw OpenAPI spec is at
+`/v3/api-docs`). Both are public. To call a protected endpoint, run **auth → login**, copy
+`data.accessToken`, click **Authorize** and paste it; Swagger UI then sends `Authorization: Bearer ...`.
+
 ## Features
 
 | # | Endpoints | Key decision |

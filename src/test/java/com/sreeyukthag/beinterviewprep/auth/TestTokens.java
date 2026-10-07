@@ -12,11 +12,11 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 
-final class TestTokens {
+public final class TestTokens {
 
     private TestTokens() {}
 
-    static String signed(JwtEncoder encoder, String role, Instant issuedAt, Instant expiresAt) {
+    public static String signed(JwtEncoder encoder, String role, Instant issuedAt, Instant expiresAt) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .subject(UUID.randomUUID().toString())
                 .claim(JwtClaims.EMAIL, "someone@example.com")
@@ -28,7 +28,7 @@ final class TestTokens {
         return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
     }
 
-    static String withRoleSwappedKeepingSignature(String token, String fromRole, String toRole) {
+    public static String withRoleSwappedKeepingSignature(String token, String fromRole, String toRole) {
         String[] parts = token.split("\\.");
         Base64.Decoder decoder = Base64.getUrlDecoder();
         Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();

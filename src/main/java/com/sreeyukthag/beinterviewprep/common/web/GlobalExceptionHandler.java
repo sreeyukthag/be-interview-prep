@@ -4,20 +4,29 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.sreeyukthag.beinterviewprep.common.exception.ApiException;
 import jakarta.validation.ConstraintViolationException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.MethodParameter;
+import org.springframework.core.annotation.MergedAnnotation;
+import org.springframework.core.annotation.MergedAnnotations;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -45,6 +54,30 @@ public class GlobalExceptionHandler {
                         new ApiResponse.FieldError(violation.getPropertyPath().toString(), violation.getMessage()))
                 .toList();
         return validationFailed(errors);
+    }
+
+    /** Raised instead of the two above when a controller constrains a parameter directly, such as a header. */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    ResponseEntity<ApiResponse<Void>> handleMethodValidation(HandlerMethodValidationException ex) {
+        List<ApiResponse.FieldError> errors = new ArrayList<>();
+        for (ParameterValidationResult result : ex.getParameterValidationResults()) {
+            if (result instanceof ParameterErrors bodyErrors) {
+                bodyErrors
+                        .getFieldErrors()
+                        .forEach(error ->
+                                errors.add(new ApiResponse.FieldError(error.getField(), error.getDefaultMessage())));
+            } else {
+                String name = parameterName(result.getMethodParameter());
+                result.getResolvableErrors()
+                        .forEach(error -> errors.add(new ApiResponse.FieldError(name, error.getDefaultMessage())));
+            }
+        }
+        return validationFailed(errors);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    ResponseEntity<ApiResponse<Void>> handleMissingHeader(MissingRequestHeaderException ex) {
+        return validationFailed(List.of(new ApiResponse.FieldError(ex.getHeaderName(), "is required")));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -96,6 +129,12 @@ public class GlobalExceptionHandler {
         log.error("Unhandled exception", ex);
         return respond(
                 HttpStatus.INTERNAL_SERVER_ERROR, ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred"));
+    }
+
+    private static String parameterName(MethodParameter parameter) {
+        MergedAnnotation<RequestHeader> header =
+                MergedAnnotations.from(parameter.getParameterAnnotations()).get(RequestHeader.class);
+        return header.isPresent() ? header.getString("name") : parameter.getParameterName();
     }
 
     private static String fieldPath(MismatchedInputException ex) {

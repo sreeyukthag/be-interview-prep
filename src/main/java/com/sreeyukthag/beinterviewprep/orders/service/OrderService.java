@@ -43,7 +43,8 @@ public class OrderService {
     public PlacedOrder place(UUID customerId, String idempotencyKey, PlaceOrderRequest request) {
         List<OrderLine> lines = OrderLine.normalise(request.items());
         String fingerprint = OrderLine.fingerprint(lines);
-        Optional<Order> existing = orderRepository.findWithItemsByIdempotencyKey(idempotencyKey);
+        Optional<Order> existing =
+                orderRepository.findWithItemsByCustomerIdAndIdempotencyKey(customerId, idempotencyKey);
         if (existing.isPresent()) {
             return replay(existing.get(), fingerprint);
         }
@@ -52,7 +53,7 @@ public class OrderService {
                     transactionTemplate.execute(status -> placeNew(customerId, idempotencyKey, fingerprint, lines)));
         } catch (DataIntegrityViolationException ex) {
             Order winner = orderRepository
-                    .findWithItemsByIdempotencyKey(idempotencyKey)
+                    .findWithItemsByCustomerIdAndIdempotencyKey(customerId, idempotencyKey)
                     .orElseThrow(() -> ex);
             log.info("Concurrent retry with idempotency key {} resolved to order {}", idempotencyKey, winner.getId());
             return replay(winner, fingerprint);

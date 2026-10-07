@@ -33,6 +33,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -67,26 +68,47 @@ class OrderIdempotencyTest {
                 {"items":[{"productId":"%s","quantity":2}]}
                 """.formatted(productId);
 
-        String first = mockMvc.perform(post("/api/v1/orders")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .header("Idempotency-Key", key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+        String first = placeOverHttp(token, key, body)
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         String firstId = JsonPath.read(first, "$.data.id");
-        mockMvc.perform(post("/api/v1/orders")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .header("Idempotency-Key", key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+        placeOverHttp(token, key, body)
                 .andExpect(status().isOk())
                 .andExpect(header().string("Idempotent-Replayed", "true"))
                 .andExpect(jsonPath("$.data.id").value(firstId));
 
         assertThat(ordersWithKey(key)).isEqualTo(1);
+        assertThat(stockOf(productId)).isEqualTo(3);
+    }
+
+    @Test
+    void theSameKeyFromTwoCustomersCreatesTwoOrders() throws Exception {
+        UUID productId = createProduct(5);
+        AuthTestClient client = new AuthTestClient(mockMvc, objectMapper);
+        String alice = client.registerAndLogin(AuthTestClient.uniqueEmail());
+        String bob = client.registerAndLogin(AuthTestClient.uniqueEmail());
+        String sharedKey = UUID.randomUUID().toString();
+        String body = """
+                {"items":[{"productId":"%s","quantity":1}]}
+                """.formatted(productId);
+
+        String aliceOrder = placeOverHttp(alice, sharedKey, body)
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replayed"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String bobOrder = placeOverHttp(bob, sharedKey, body)
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replayed"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(JsonPath.<String>read(bobOrder, "$.data.id")).isNotEqualTo(JsonPath.read(aliceOrder, "$.data.id"));
+        assertThat(ordersWithKey(sharedKey)).isEqualTo(2);
         assertThat(stockOf(productId)).isEqualTo(3);
     }
 
@@ -160,6 +182,14 @@ class OrderIdempotencyTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    private ResultActions placeOverHttp(String token, String key, String body) throws Exception {
+        return mockMvc.perform(post("/api/v1/orders")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
     }
 
     private static PlaceOrderRequest request(UUID productId, int quantity) {

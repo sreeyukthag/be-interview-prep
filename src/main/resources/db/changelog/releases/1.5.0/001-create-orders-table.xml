@@ -21,7 +21,7 @@
                 <constraints nullable="false"/>
             </column>
             <column name="idempotency_key" type="VARCHAR(64)">
-                <constraints nullable="false" unique="true" uniqueConstraintName="uk_orders_idempotency_key"/>
+                <constraints nullable="false"/>
             </column>
             <column name="request_hash" type="VARCHAR(64)">
                 <constraints nullable="false"/>
@@ -41,6 +41,14 @@
             ALTER TABLE orders ADD CONSTRAINT ck_orders_status CHECK (status IN ('PLACED', 'CANCELLED'));
             ALTER TABLE orders ADD CONSTRAINT ck_orders_total_non_negative CHECK (total_cents &gt;= 0);
         </sql>
+
+        <!--
+            A key is unique per customer, so two customers can never collide on the same key. customer_id leads the
+            index, which also serves any lookup by customer, so it needs no index of its own.
+        -->
+        <addUniqueConstraint tableName="orders"
+                             columnNames="customer_id, idempotency_key"
+                             constraintName="uk_orders_customer_idempotency_key"/>
 
         <rollback>
             <dropTable tableName="orders"/>

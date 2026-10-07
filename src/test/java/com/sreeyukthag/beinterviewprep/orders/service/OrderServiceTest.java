@@ -62,7 +62,8 @@ class OrderServiceTest {
     @Test
     void retryWithTheSameItemsReplaysTheExistingOrderWithoutTouchingStock() {
         Order existing = existingOrder(REQUEST);
-        when(orderRepository.findWithItemsByIdempotencyKey(KEY)).thenReturn(Optional.of(existing));
+        when(orderRepository.findWithItemsByCustomerIdAndIdempotencyKey(CUSTOMER_ID, KEY))
+                .thenReturn(Optional.of(existing));
 
         PlacedOrder placed = orderService.place(CUSTOMER_ID, KEY, REQUEST);
 
@@ -74,7 +75,8 @@ class OrderServiceTest {
     @Test
     void reusingAKeyForDifferentItemsIsRejected() {
         Order existing = existingOrder(REQUEST);
-        when(orderRepository.findWithItemsByIdempotencyKey(KEY)).thenReturn(Optional.of(existing));
+        when(orderRepository.findWithItemsByCustomerIdAndIdempotencyKey(CUSTOMER_ID, KEY))
+                .thenReturn(Optional.of(existing));
         PlaceOrderRequest different = new PlaceOrderRequest(List.of(new OrderItemRequest(PRODUCT_ID, 3)));
 
         assertThrows(IdempotencyKeyReusedException.class, () -> orderService.place(CUSTOMER_ID, KEY, different));
@@ -84,7 +86,8 @@ class OrderServiceTest {
 
     @Test
     void newKeyReservesStockAndCreatesTheOrder() {
-        when(orderRepository.findWithItemsByIdempotencyKey(KEY)).thenReturn(Optional.empty());
+        when(orderRepository.findWithItemsByCustomerIdAndIdempotencyKey(CUSTOMER_ID, KEY))
+                .thenReturn(Optional.empty());
         when(stockService.reserve(PRODUCT_ID, 2)).thenReturn(new ReservedItem(PRODUCT_ID, 2, 1_000));
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -100,12 +103,12 @@ class OrderServiceTest {
     @Test
     void losingAConcurrentRetryReturnsTheWinnersOrder() {
         Order winner = existingOrder(REQUEST);
-        when(orderRepository.findWithItemsByIdempotencyKey(KEY))
+        when(orderRepository.findWithItemsByCustomerIdAndIdempotencyKey(CUSTOMER_ID, KEY))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winner));
         when(stockService.reserve(PRODUCT_ID, 2)).thenReturn(new ReservedItem(PRODUCT_ID, 2, 1_000));
         when(orderRepository.saveAndFlush(any(Order.class)))
-                .thenThrow(new DataIntegrityViolationException("uk_orders_idempotency_key"));
+                .thenThrow(new DataIntegrityViolationException("uk_orders_customer_idempotency_key"));
 
         PlacedOrder placed = orderService.place(CUSTOMER_ID, KEY, REQUEST);
 
@@ -114,7 +117,8 @@ class OrderServiceTest {
 
     @Test
     void anIntegrityViolationWithNoWinnerIsRethrown() {
-        when(orderRepository.findWithItemsByIdempotencyKey(KEY)).thenReturn(Optional.empty());
+        when(orderRepository.findWithItemsByCustomerIdAndIdempotencyKey(CUSTOMER_ID, KEY))
+                .thenReturn(Optional.empty());
         when(stockService.reserve(PRODUCT_ID, 2)).thenReturn(new ReservedItem(PRODUCT_ID, 2, 1_000));
         when(orderRepository.saveAndFlush(any(Order.class)))
                 .thenThrow(new DataIntegrityViolationException("ck_order_items_quantity_positive"));

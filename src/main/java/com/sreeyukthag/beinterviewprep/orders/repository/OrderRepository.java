@@ -17,7 +17,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findWithItemsById(UUID id);
 
     @EntityGraph(attributePaths = "items")
-    Optional<Order> findWithItemsByIdempotencyKey(String idempotencyKey);
+    Optional<Order> findWithItemsByCustomerIdAndIdempotencyKey(UUID customerId, String idempotencyKey);
 
     /**
      * Moves the order from {@code from} to {@code to} only if it is still in {@code from}. Of two concurrent cancels

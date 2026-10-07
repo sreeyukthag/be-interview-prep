@@ -3,6 +3,7 @@ package com.sreeyukthag.beinterviewprep.orders.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -10,11 +11,14 @@ import static org.mockito.Mockito.when;
 
 import com.sreeyukthag.beinterviewprep.catalog.stock.ReservedItem;
 import com.sreeyukthag.beinterviewprep.catalog.stock.StockService;
+import com.sreeyukthag.beinterviewprep.common.exception.ResourceNotFoundException;
 import com.sreeyukthag.beinterviewprep.orders.dto.request.OrderItemRequest;
 import com.sreeyukthag.beinterviewprep.orders.dto.request.PlaceOrderRequest;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.PlacedOrder;
 import com.sreeyukthag.beinterviewprep.orders.entity.Order;
+import com.sreeyukthag.beinterviewprep.orders.entity.OrderStatus;
 import com.sreeyukthag.beinterviewprep.orders.exception.IdempotencyKeyReusedException;
+import com.sreeyukthag.beinterviewprep.orders.exception.OrderAlreadyCancelledException;
 import com.sreeyukthag.beinterviewprep.orders.repository.OrderRepository;
 import java.util.List;
 import java.util.Optional;
@@ -124,6 +128,53 @@ class OrderServiceTest {
                 .thenThrow(new DataIntegrityViolationException("ck_order_items_quantity_positive"));
 
         assertThrows(DataIntegrityViolationException.class, () -> orderService.place(CUSTOMER_ID, KEY, REQUEST));
+    }
+
+    @Test
+    void cancellingAnOrderTheCallerCannotSeeIsNotFoundAndReleasesNothing() {
+        UUID orderId = UUID.randomUUID();
+        OrderAccess access = new OrderAccess(CUSTOMER_ID, false);
+        when(orderRepository.transition(
+                        eq(orderId),
+                        eq(CUSTOMER_ID),
+                        eq(false),
+                        eq(OrderStatus.PLACED),
+                        eq(OrderStatus.CANCELLED),
+                        any()))
+                .thenReturn(0);
+        when(orderRepository.existsVisible(orderId, CUSTOMER_ID, false)).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> orderService.cancel(orderId, access));
+
+        verifyNoInteractions(stockService);
+    }
+
+    @Test
+    void cancellingAVisibleOrderThatIsNoLongerPlacedConflicts() {
+        UUID orderId = UUID.randomUUID();
+        OrderAccess access = new OrderAccess(CUSTOMER_ID, false);
+        when(orderRepository.transition(
+                        eq(orderId),
+                        eq(CUSTOMER_ID),
+                        eq(false),
+                        eq(OrderStatus.PLACED),
+                        eq(OrderStatus.CANCELLED),
+                        any()))
+                .thenReturn(0);
+        when(orderRepository.existsVisible(orderId, CUSTOMER_ID, false)).thenReturn(true);
+
+        assertThrows(OrderAlreadyCancelledException.class, () -> orderService.cancel(orderId, access));
+
+        verifyNoInteractions(stockService);
+    }
+
+    @Test
+    void anOrderTheCallerCannotSeeIsNotFound() {
+        UUID orderId = UUID.randomUUID();
+        when(orderRepository.findVisible(orderId, CUSTOMER_ID, false)).thenReturn(Optional.empty());
+
+        assertThrows(
+                ResourceNotFoundException.class, () -> orderService.get(orderId, new OrderAccess(CUSTOMER_ID, false)));
     }
 
     private static Order existingOrder(PlaceOrderRequest request) {

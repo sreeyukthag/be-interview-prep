@@ -29,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 class OrderCancellationTest {
 
     private static final UUID CUSTOMER_ID = UUID.randomUUID();
+    private static final OrderAccess OWNER = new OrderAccess(CUSTOMER_ID, false);
 
     @Autowired
     private OrderService orderService;
@@ -47,10 +48,10 @@ class OrderCancellationTest {
                         new PlaceOrderRequest(List.of(new OrderItemRequest(lamp, 3), new OrderItemRequest(mug, 1))))
                 .order();
 
-        OrderResponse cancelled = orderService.cancel(order.id());
+        OrderResponse cancelled = orderService.cancel(order.id(), OWNER);
 
         assertThat(cancelled.status()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(orderService.get(order.id()).status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(orderService.get(order.id(), OWNER).status()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(stockOf(lamp)).isEqualTo(5);
         assertThat(stockOf(mug)).isEqualTo(4);
     }
@@ -59,9 +60,9 @@ class OrderCancellationTest {
     void cancellingTwiceReleasesStockOnce() {
         UUID productId = createProduct(5);
         UUID orderId = place(request(productId, 2)).order().id();
-        orderService.cancel(orderId);
+        orderService.cancel(orderId, OWNER);
 
-        assertThrows(OrderAlreadyCancelledException.class, () -> orderService.cancel(orderId));
+        assertThrows(OrderAlreadyCancelledException.class, () -> orderService.cancel(orderId, OWNER));
 
         assertThat(stockOf(productId)).isEqualTo(5);
     }
@@ -76,7 +77,7 @@ class OrderCancellationTest {
             cancels.add(() -> {
                 start.await();
                 try {
-                    orderService.cancel(orderId);
+                    orderService.cancel(orderId, OWNER);
                     return "cancelled";
                 } catch (OrderAlreadyCancelledException ex) {
                     return "already-cancelled";
@@ -97,7 +98,7 @@ class OrderCancellationTest {
         UUID orderId = place(request(productId, 2)).order().id();
         productService.get(productId);
 
-        orderService.cancel(orderId);
+        orderService.cancel(orderId, OWNER);
 
         assertThat(productService.get(productId).stock()).isEqualTo(5);
     }
@@ -110,7 +111,7 @@ class OrderCancellationTest {
                 .place(CUSTOMER_ID, key, request(productId, 2))
                 .order()
                 .id();
-        orderService.cancel(orderId);
+        orderService.cancel(orderId, OWNER);
 
         PlacedOrder retry = orderService.place(CUSTOMER_ID, key, request(productId, 2));
 
@@ -123,7 +124,7 @@ class OrderCancellationTest {
     void cancellingAnUnknownOrderIsNotFound() {
         UUID unknown = UUID.randomUUID();
 
-        assertThrows(ResourceNotFoundException.class, () -> orderService.cancel(unknown));
+        assertThrows(ResourceNotFoundException.class, () -> orderService.cancel(unknown, OWNER));
     }
 
     private static <T> List<T> runTogether(List<Callable<T>> tasks, CountDownLatch start) throws Exception {

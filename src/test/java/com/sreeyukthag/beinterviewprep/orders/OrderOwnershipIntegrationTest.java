@@ -9,8 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.sreeyukthag.beinterviewprep.auth.AuthTestClient;
+import com.sreeyukthag.beinterviewprep.auth.TestTokens;
 import com.sreeyukthag.beinterviewprep.catalog.dto.request.ProductRequest;
 import com.sreeyukthag.beinterviewprep.catalog.service.ProductService;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +27,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -42,6 +46,9 @@ class OrderOwnershipIntegrationTest {
 
     @Autowired
     private JwtDecoder jwtDecoder;
+
+    @Autowired
+    private JwtEncoder jwtEncoder;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -82,7 +89,7 @@ class OrderOwnershipIntegrationTest {
                 """.formatted(UUID.randomUUID(), productId);
 
         String response = mockMvc.perform(post("/api/v1/orders")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
                         .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -93,6 +100,65 @@ class OrderOwnershipIntegrationTest {
 
         UUID orderId = UUID.fromString(JsonPath.read(response, "$.data.id"));
         assertThat(ownerOf(orderId)).isEqualTo(tokenSubject);
+    }
+
+    @Test
+    void aCustomerCannotSeeOrCancelAnotherCustomersOrder() throws Exception {
+        UUID productId = createProduct(5);
+        String alice = client.registerAndLogin(AuthTestClient.uniqueEmail());
+        String bob = client.registerAndLogin(AuthTestClient.uniqueEmail());
+        UUID bobsOrder = placeAs(bob, productId, 2);
+
+        mockMvc.perform(get("/api/v1/orders/{id}", bobsOrder).header(HttpHeaders.AUTHORIZATION, bearer(alice)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", bobsOrder).header(HttpHeaders.AUTHORIZATION, bearer(alice)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
+
+        assertThat(stockOf(productId)).isEqualTo(3);
+        mockMvc.perform(get("/api/v1/orders/{id}", bobsOrder).header(HttpHeaders.AUTHORIZATION, bearer(bob)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PLACED"));
+    }
+
+    @Test
+    void anAdminCanReadAndCancelAnotherCustomersOrder() throws Exception {
+        UUID productId = createProduct(5);
+        String bob = client.registerAndLogin(AuthTestClient.uniqueEmail());
+        UUID bobsOrder = placeAs(bob, productId, 2);
+        Instant now = Instant.now();
+        String admin = TestTokens.signed(jwtEncoder, "ADMIN", now, now.plus(Duration.ofMinutes(15)));
+
+        mockMvc.perform(get("/api/v1/orders/{id}", bobsOrder).header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(bobsOrder.toString()));
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", bobsOrder).header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+
+        assertThat(stockOf(productId)).isEqualTo(5);
+    }
+
+    private UUID placeAs(String token, UUID productId, int quantity) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/orders")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"%s\",\"quantity\":%d}]}".formatted(productId, quantity)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return UUID.fromString(JsonPath.read(response, "$.data.id"));
+    }
+
+    private static String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    private int stockOf(UUID productId) {
+        return jdbcTemplate.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, productId);
     }
 
     private UUID createProduct(int stock) {

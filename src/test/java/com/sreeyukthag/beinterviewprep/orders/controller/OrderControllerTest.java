@@ -20,8 +20,10 @@ import com.sreeyukthag.beinterviewprep.orders.dto.response.PlacedOrder;
 import com.sreeyukthag.beinterviewprep.orders.entity.OrderStatus;
 import com.sreeyukthag.beinterviewprep.orders.exception.IdempotencyKeyReusedException;
 import com.sreeyukthag.beinterviewprep.orders.exception.OrderAlreadyCancelledException;
+import com.sreeyukthag.beinterviewprep.orders.service.OrderAccess;
 import com.sreeyukthag.beinterviewprep.orders.service.OrderService;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.test.context.TestSecurityContextHolder;
@@ -42,6 +45,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class OrderControllerTest {
 
     private static final UUID CUSTOMER_ID = UUID.fromString("3b0c8f9e-6d2a-4f1e-9a57-2c4e8d1b7f60");
+    private static final OrderAccess AS_CUSTOMER = new OrderAccess(CUSTOMER_ID, false);
     private static final UUID ORDER_ID = UUID.fromString("6f1c2a52-1d1e-4c39-9d8f-0f3a1f0f6b10");
     private static final UUID PRODUCT_ID = UUID.fromString("8aa10fd1-20a5-5dea-88e0-ffd88a8d048b");
     private static final String KEY = "0b9f6a4e-5d0c-4f43-a8a8-1c2d3e4f5a6b";
@@ -165,9 +169,9 @@ class OrderControllerTest {
 
     @Test
     void getReturnsTheOrder() throws Exception {
-        when(orderService.get(ORDER_ID)).thenReturn(sampleOrder());
+        when(orderService.get(ORDER_ID, AS_CUSTOMER)).thenReturn(sampleOrder());
 
-        mockMvc.perform(get("/api/v1/orders/{id}", ORDER_ID))
+        mockMvc.perform(get("/api/v1/orders/{id}", ORDER_ID).with(authenticatedAs(CUSTOMER_ID, "USER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].productId").value(PRODUCT_ID.toString()))
                 .andExpect(jsonPath("$.data.items[0].lineTotalCents").value(2_000));
@@ -175,9 +179,9 @@ class OrderControllerTest {
 
     @Test
     void unknownOrderReturns404() throws Exception {
-        when(orderService.get(ORDER_ID)).thenThrow(new ResourceNotFoundException("Order", ORDER_ID));
+        when(orderService.get(ORDER_ID, AS_CUSTOMER)).thenThrow(new ResourceNotFoundException("Order", ORDER_ID));
 
-        mockMvc.perform(get("/api/v1/orders/{id}", ORDER_ID))
+        mockMvc.perform(get("/api/v1/orders/{id}", ORDER_ID).with(authenticatedAs(CUSTOMER_ID, "USER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
     }
@@ -192,34 +196,50 @@ class OrderControllerTest {
                 placed.items(),
                 placed.createdAt(),
                 placed.updatedAt());
-        when(orderService.cancel(ORDER_ID)).thenReturn(cancelled);
+        when(orderService.cancel(ORDER_ID, AS_CUSTOMER)).thenReturn(cancelled);
 
-        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID))
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID).with(authenticatedAs(CUSTOMER_ID, "USER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
     }
 
     @Test
     void cancellingTwiceReturns409() throws Exception {
-        when(orderService.cancel(ORDER_ID)).thenThrow(new OrderAlreadyCancelledException(ORDER_ID));
+        when(orderService.cancel(ORDER_ID, AS_CUSTOMER)).thenThrow(new OrderAlreadyCancelledException(ORDER_ID));
 
-        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID))
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID).with(authenticatedAs(CUSTOMER_ID, "USER")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errorCode").value("ORDER_ALREADY_CANCELLED"));
     }
 
     @Test
     void cancellingAnUnknownOrderReturns404() throws Exception {
-        when(orderService.cancel(ORDER_ID)).thenThrow(new ResourceNotFoundException("Order", ORDER_ID));
+        when(orderService.cancel(ORDER_ID, AS_CUSTOMER)).thenThrow(new ResourceNotFoundException("Order", ORDER_ID));
 
-        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID))
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID).with(authenticatedAs(CUSTOMER_ID, "USER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("NOT_FOUND"));
     }
 
+    @Test
+    void anAdminTokenReadsAndCancelsWithAdminAccess() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        OrderAccess asAdmin = new OrderAccess(adminId, true);
+        when(orderService.get(ORDER_ID, asAdmin)).thenReturn(sampleOrder());
+        when(orderService.cancel(ORDER_ID, asAdmin)).thenReturn(sampleOrder());
+
+        mockMvc.perform(get("/api/v1/orders/{id}", ORDER_ID).with(authenticatedAs(adminId, "ADMIN")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/orders/{id}/cancel", ORDER_ID).with(authenticatedAs(adminId, "ADMIN")))
+                .andExpect(status().isOk());
+
+        verify(orderService).get(ORDER_ID, asAdmin);
+        verify(orderService).cancel(ORDER_ID, asAdmin);
+    }
+
     private static MockHttpServletRequestBuilder placeRequest(String body) {
         return post("/api/v1/orders")
-                .with(authenticatedAs(CUSTOMER_ID))
+                .with(authenticatedAs(CUSTOMER_ID, "USER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);
     }
@@ -228,13 +248,16 @@ class OrderControllerTest {
      * The slice runs without the security filters, so {@code jwt()} would never reach the controller; putting the
      * token straight into the test security context is what {@code @AuthenticationPrincipal} reads.
      */
-    private static RequestPostProcessor authenticatedAs(UUID userId) {
+    private static RequestPostProcessor authenticatedAs(UUID userId, String... roles) {
         return request -> {
             Jwt jwt = Jwt.withTokenValue("test-token")
                     .header("alg", "HS256")
                     .subject(userId.toString())
                     .build();
-            TestSecurityContextHolder.setAuthentication(new JwtAuthenticationToken(jwt));
+            String[] authorities =
+                    Arrays.stream(roles).map(role -> "ROLE_" + role).toArray(String[]::new);
+            TestSecurityContextHolder.setAuthentication(
+                    new JwtAuthenticationToken(jwt, AuthorityUtils.createAuthorityList(authorities)));
             return request;
         };
     }

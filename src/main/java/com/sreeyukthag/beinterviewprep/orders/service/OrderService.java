@@ -60,28 +60,33 @@ public class OrderService {
         }
     }
 
+    /** Another customer's order is reported as not found, so its existence is never revealed. */
     @Transactional(readOnly = true)
-    public OrderResponse get(UUID id) {
-        return OrderMapper.toResponse(find(id));
+    public OrderResponse get(UUID id, OrderAccess access) {
+        return OrderMapper.toResponse(find(id, access));
     }
 
     /** The status change and every stock release commit together, or not at all. */
     @Transactional
-    public OrderResponse cancel(UUID id) {
-        if (orderRepository.transition(id, OrderStatus.PLACED, OrderStatus.CANCELLED, Instant.now()) == 0) {
-            throw orderRepository.existsById(id)
+    public OrderResponse cancel(UUID id, OrderAccess access) {
+        int cancelled = orderRepository.transition(
+                id, access.customerId(), access.admin(), OrderStatus.PLACED, OrderStatus.CANCELLED, Instant.now());
+        if (cancelled == 0) {
+            throw orderRepository.existsVisible(id, access.customerId(), access.admin())
                     ? new OrderAlreadyCancelledException(id)
                     : new ResourceNotFoundException("Order", id);
         }
-        Order order = find(id);
+        Order order = find(id, access);
         order.getItems().stream()
                 .sorted(Comparator.comparing(OrderItem::getProductId))
                 .forEach(item -> stockService.release(item.getProductId(), item.getQuantity()));
         return OrderMapper.toResponse(order);
     }
 
-    private Order find(UUID id) {
-        return orderRepository.findWithItemsById(id).orElseThrow(() -> new ResourceNotFoundException("Order", id));
+    private Order find(UUID id, OrderAccess access) {
+        return orderRepository
+                .findVisible(id, access.customerId(), access.admin())
+                .orElseThrow(() -> new ResourceNotFoundException("Order", id));
     }
 
     private OrderResponse placeNew(UUID customerId, String idempotencyKey, String fingerprint, List<OrderLine> lines) {

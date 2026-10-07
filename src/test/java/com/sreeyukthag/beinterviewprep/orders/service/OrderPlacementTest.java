@@ -31,6 +31,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class OrderPlacementTest {
 
     private static final UUID CUSTOMER_ID = UUID.randomUUID();
+    private static final OrderAccess OWNER = new OrderAccess(CUSTOMER_ID, false);
 
     @Autowired
     private OrderService orderService;
@@ -88,7 +89,7 @@ class OrderPlacementTest {
                 .containsExactlyInAnyOrder(tuple(lamp, 3), tuple(mug, 1));
         assertThat(stockOf(lamp)).isEqualTo(2);
         assertThat(stockOf(mug)).isEqualTo(2);
-        assertThat(orderService.get(order.id()))
+        assertThat(orderService.get(order.id(), OWNER))
                 .usingRecursiveComparison()
                 .ignoringFields("createdAt", "updatedAt")
                 .isEqualTo(order);
@@ -138,7 +139,7 @@ class OrderPlacementTest {
     void unknownOrderIsNotFound() {
         UUID unknown = UUID.randomUUID();
 
-        assertThrows(ResourceNotFoundException.class, () -> orderService.get(unknown));
+        assertThrows(ResourceNotFoundException.class, () -> orderService.get(unknown, OWNER));
     }
 
     private static <T> List<T> runTogether(List<Callable<T>> tasks, CountDownLatch start) throws Exception {

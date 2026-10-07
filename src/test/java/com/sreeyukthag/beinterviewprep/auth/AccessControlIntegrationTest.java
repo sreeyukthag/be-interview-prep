@@ -33,6 +33,8 @@ class AccessControlIntegrationTest {
 
     private static final String PROTECTED = "/api/v1/users/me";
     private static final String ADMIN_USERS = "/api/v1/admin/users";
+    private static final String NEW_PRODUCT =
+            "{\"name\":\"Desk lamp\",\"category\":\"home\",\"priceCents\":2500,\"stock\":3,\"rating\":4.5}";
 
     @Autowired
     private MockMvc mockMvc;
@@ -157,6 +159,54 @@ class AccessControlIntegrationTest {
 
         mockMvc.perform(get("/api/v1/tasks").header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void productReadsArePublic() throws Exception {
+        mockMvc.perform(get("/api/v1/products").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    void creatingAProductWithoutATokenReturns401() throws Exception {
+        mockMvc.perform(post("/api/v1/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(NEW_PRODUCT))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void userCannotCreateProducts() throws Exception {
+        String userToken = client.registerAndLogin(AuthTestClient.uniqueEmail());
+
+        mockMvc.perform(post("/api/v1/products")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(userToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(NEW_PRODUCT))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    @Test
+    void adminCanCreateProducts() throws Exception {
+        String adminEmail = AuthTestClient.uniqueEmail();
+        userRepository.save(new User(adminEmail, passwordEncoder.encode(AuthTestClient.PASSWORD), Role.ADMIN));
+        String adminToken = client.accessTokenFor(adminEmail, AuthTestClient.PASSWORD);
+
+        mockMvc.perform(post("/api/v1/products")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(NEW_PRODUCT))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void cacheMetricsAreAdminOnly() throws Exception {
+        String userToken = client.registerAndLogin(AuthTestClient.uniqueEmail());
+
+        mockMvc.perform(get("/actuator/caches").header(HttpHeaders.AUTHORIZATION, bearer(userToken)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

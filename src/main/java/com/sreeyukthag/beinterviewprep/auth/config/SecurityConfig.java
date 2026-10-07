@@ -5,6 +5,7 @@ import com.sreeyukthag.beinterviewprep.auth.security.JwtClaims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -29,7 +30,9 @@ class SecurityConfig {
                 .authorizeHttpRequests(
                         auth -> auth.requestMatchers("/api/v1/auth/**", "/actuator/health", "/r/**", "/error")
                                 .permitAll()
-                                .requestMatchers("/api/v1/admin/**")
+                                .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**")
+                                .permitAll()
+                                .requestMatchers("/api/v1/admin/**", "/api/v1/products/**", "/actuator/**")
                                 .hasRole("ADMIN")
                                 .anyRequest()
                                 .authenticated())

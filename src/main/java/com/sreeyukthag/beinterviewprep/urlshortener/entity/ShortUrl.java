@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,8 +31,9 @@ public class ShortUrl extends BaseEntity {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    /** Null for a custom-code alias, so aliases never collide with the generated code for the same URL. */
     @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "dedupe_key", nullable = false, unique = true, length = 64)
+    @Column(name = "dedupe_key", unique = true, length = 64)
     private String dedupeKey;
 
     @Column(name = "visit_count", nullable = false)
@@ -42,6 +44,12 @@ public class ShortUrl extends BaseEntity {
         this.originalUrl = originalUrl;
         this.expiresAt = expiresAt;
         this.dedupeKey = dedupeKeyFor(originalUrl, expiresAt);
+    }
+
+    public static ShortUrl alias(String code, String originalUrl, Instant expiresAt) {
+        ShortUrl alias = new ShortUrl(code, originalUrl, expiresAt);
+        alias.dedupeKey = null;
+        return alias;
     }
 
     /**
@@ -56,6 +64,10 @@ public class ShortUrl extends BaseEntity {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is required on every Java platform", ex);
         }
+    }
+
+    public boolean pointsTo(String originalUrl, Instant expiresAt) {
+        return this.originalUrl.equals(originalUrl) && Objects.equals(this.expiresAt, expiresAt);
     }
 
     public boolean isExpiredAt(Instant now) {

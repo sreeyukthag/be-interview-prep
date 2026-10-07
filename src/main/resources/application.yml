@@ -21,6 +21,8 @@ management:
         include: health
 
 app:
+  short-url:
+    base-url: ${SHORT_URL_BASE:http://localhost:8080/r/}
   security:
     jwt:
       secret: ${JWT_SECRET}

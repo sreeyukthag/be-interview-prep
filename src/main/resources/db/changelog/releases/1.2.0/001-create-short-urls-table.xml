@@ -17,6 +17,9 @@
                 <constraints nullable="false"/>
             </column>
             <column name="expires_at" type="TIMESTAMP WITH TIME ZONE"/>
+            <column name="dedupe_key" type="CHAR(64)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_short_urls_dedupe_key"/>
+            </column>
             <column name="visit_count" type="BIGINT" defaultValueNumeric="0">
                 <constraints nullable="false"/>
             </column>
@@ -27,8 +30,5 @@
                 <constraints nullable="false"/>
             </column>
         </createTable>
-        <createIndex tableName="short_urls" indexName="idx_short_urls_original_url">
-            <column name="original_url"/>
-        </createIndex>
     </changeSet>
 </databaseChangeLog>

@@ -32,7 +32,7 @@ public class ShortUrlService {
                 request.expiresAt() == null ? null : request.expiresAt().truncatedTo(ChronoUnit.MICROS);
 
         ShortUrl shortUrl = repository
-                .findFirstByOriginalUrlAndExpiresAtOrderByCreatedAtAsc(originalUrl, expiresAt)
+                .findByDedupeKey(ShortUrl.dedupeKeyFor(originalUrl, expiresAt))
                 .orElseGet(() -> repository.save(new ShortUrl(newUniqueCode(), originalUrl, expiresAt)));
         return mapper.toResponse(shortUrl);
     }

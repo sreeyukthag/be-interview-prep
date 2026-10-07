@@ -1,7 +1,6 @@
 package com.sreeyukthag.beinterviewprep.urlshortener.repository;
 
 import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,8 +14,7 @@ public interface ShortUrlRepository extends JpaRepository<ShortUrl, UUID> {
 
     boolean existsByCode(String code);
 
-    /** A null {@code expiresAt} matches rows with no expiry ({@code IS NULL}). */
-    Optional<ShortUrl> findFirstByOriginalUrlAndExpiresAtOrderByCreatedAtAsc(String originalUrl, Instant expiresAt);
+    Optional<ShortUrl> findByDedupeKey(String dedupeKey);
 
     /** Increments in the database so concurrent visits never overwrite each other's count. */
     @Modifying

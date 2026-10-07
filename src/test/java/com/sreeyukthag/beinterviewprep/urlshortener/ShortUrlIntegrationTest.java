@@ -1,9 +1,11 @@
 package com.sreeyukthag.beinterviewprep.urlshortener;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.request.ShortenUrlRequest;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
+import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
 import com.sreeyukthag.beinterviewprep.urlshortener.repository.ShortUrlRepository;
 import com.sreeyukthag.beinterviewprep.urlshortener.service.ShortUrlService;
 import java.time.Instant;
@@ -17,6 +19,7 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @SpringBootTest
 class ShortUrlIntegrationTest {
@@ -45,6 +48,15 @@ class ShortUrlIntegrationTest {
         assertThat(repository.findAll())
                 .filteredOn(shortUrl -> shortUrl.getOriginalUrl().equals(url))
                 .hasSize(2);
+    }
+
+    @Test
+    void databaseRejectsSecondRowForSameUrlWithoutExpiry() {
+        String url = "https://example.com/db-enforced";
+        repository.saveAndFlush(new ShortUrl("dbenf01", url, null));
+        ShortUrl duplicate = new ShortUrl("dbenf02", url, null);
+
+        assertThrows(DataIntegrityViolationException.class, () -> repository.saveAndFlush(duplicate));
     }
 
     @Test

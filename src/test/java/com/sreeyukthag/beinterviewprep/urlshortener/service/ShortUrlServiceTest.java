@@ -47,8 +47,7 @@ class ShortUrlServiceTest {
 
     @Test
     void shortenStoresNewMappingWithGeneratedCode() {
-        when(repository.findFirstByOriginalUrlAndExpiresAtOrderByCreatedAtAsc(URL, null))
-                .thenReturn(Optional.empty());
+        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, null))).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("abc1234");
         when(repository.existsByCode("abc1234")).thenReturn(false);
         when(repository.save(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -65,8 +64,7 @@ class ShortUrlServiceTest {
     void shortenReturnsExistingMappingForSameUrlAndExpiry() {
         Instant expiresAt = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
         ShortUrl existing = new ShortUrl("exist12", URL, expiresAt);
-        when(repository.findFirstByOriginalUrlAndExpiresAtOrderByCreatedAtAsc(URL, expiresAt))
-                .thenReturn(Optional.of(existing));
+        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, expiresAt))).thenReturn(Optional.of(existing));
 
         ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, expiresAt));
 
@@ -77,8 +75,7 @@ class ShortUrlServiceTest {
 
     @Test
     void shortenRetriesWhenGeneratedCodeIsTaken() {
-        when(repository.findFirstByOriginalUrlAndExpiresAtOrderByCreatedAtAsc(URL, null))
-                .thenReturn(Optional.empty());
+        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, null))).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("taken01", "free001");
         when(repository.existsByCode("taken01")).thenReturn(true);
         when(repository.existsByCode("free001")).thenReturn(false);
@@ -93,8 +90,7 @@ class ShortUrlServiceTest {
 
     @Test
     void shortenGivesUpAfterMaxCollisions() {
-        when(repository.findFirstByOriginalUrlAndExpiresAtOrderByCreatedAtAsc(URL, null))
-                .thenReturn(Optional.empty());
+        when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, null))).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("taken01");
         when(repository.existsByCode(anyString())).thenReturn(true);
         ShortenUrlRequest request = new ShortenUrlRequest(URL, null);

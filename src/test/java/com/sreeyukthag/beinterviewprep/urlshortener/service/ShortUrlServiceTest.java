@@ -198,6 +198,20 @@ class ShortUrlServiceTest {
     }
 
     @Test
+    void shortenWithCustomCodeRethrowsInsertFailureWhenNoRowHoldsTheCode() {
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("unexpected constraint");
+        when(repository.findByCode("promo")).thenReturn(Optional.empty(), Optional.empty());
+        when(writer.insert(any(ShortUrl.class))).thenThrow(failure);
+        ShortenUrlRequest request = new ShortenUrlRequest(URL, null, "promo");
+
+        DataIntegrityViolationException thrown =
+                assertThrows(DataIntegrityViolationException.class, () -> service.shorten(request));
+
+        assertThat(thrown).isSameAs(failure);
+        verify(repository, times(2)).findByCode("promo");
+    }
+
+    @Test
     void statsReturnsVisitCountAndOriginalUrl() {
         when(repository.findByCode("abc1234")).thenReturn(Optional.of(new ShortUrl("abc1234", URL, null)));
 

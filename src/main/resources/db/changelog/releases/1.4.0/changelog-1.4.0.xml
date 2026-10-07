@@ -6,6 +6,7 @@
             http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
     <include file="001-create-products-table.xml" relativeToChangelogFile="true"/>
+    <include file="002-seed-products.xml" relativeToChangelogFile="true"/>
 
     <changeSet id="1.4.0-tag" author="sreeyukthag">
         <tagDatabase tag="1.4.0"/>

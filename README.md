@@ -57,7 +57,7 @@ Tokens expire after 15 minutes. Admin-only routes need the `ADMIN_EMAIL` account
 | # | Endpoints | Key decision |
 |---|---|---|
 | 1 | `POST/GET /api/v1/tasks` (`?status=TODO\|IN_PROGRESS\|DONE`), `GET/PUT/DELETE /api/v1/tasks/{id}` | Bean Validation returns one message per invalid field through the shared `GlobalExceptionHandler`; `@Version` guards concurrent updates. |
-| 2 | `POST /api/v1/urls`, `GET /api/v1/urls/{code}/stats`, `GET /r/{code}` | The same URL and expiry returns the existing code (unique dedupe key). Visits use an atomic `UPDATE ... SET visit_count = visit_count + 1`, so no count is lost under parallel opens. |
+| 2 | `POST /api/v1/urls`, `GET /api/v1/urls/{code}/stats`, `GET /r/{code}` | The same URL and expiry returns the existing code (unique dedupe key). Visits use an atomic `UPDATE ... SET visit_count = visit_count + 1`, so no count is lost under parallel opens. An optional `customCode` (3–8 of `A-Z a-z 0-9 - _`) creates an alias outside the dedupe: repeating it for the same URL and expiry returns it, for another URL it is 409 `SHORT_CODE_TAKEN`. |
 | 3 | `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `GET /api/v1/users/me`, `GET /api/v1/admin/users` (ADMIN) | Stateless JWT signed with `JWT_SECRET`, BCrypt passwords; 401 and 403 are JSON in the shared envelope. |
 | 4 | `GET /api/v1/products`, `GET /api/v1/products/{id}`; `POST/PUT/DELETE` (ADMIN) | Filters `category`, `minPrice`, `maxPrice`, `inStock`, `q` combine through JPA Specifications; `page`, `size` (max 100), `sort=field,dir`. Lookups by id are cached in Caffeine and evicted on update or delete; see `GET /actuator/caches` and `/actuator/metrics/cache.gets` (ADMIN). |
 | 5 | `POST /api/v1/orders` with `Idempotency-Key` header, `GET /api/v1/orders/{id}`, `POST /api/v1/orders/{id}/cancel` | Each item reserves stock with a conditional `UPDATE ... WHERE stock >= :qty` in one transaction, so any shortfall rolls back the whole order (409). A repeated `Idempotency-Key` for the same customer returns the original order. |
@@ -96,7 +96,7 @@ src/main/resources/db/changelog/
 ## Database versioning
 
 Every schema change is a Liquibase XML changeset. Each feature ships as a minor release (`1.1.0` for
-Q1 through `1.5.0` for Q5): the `pom.xml` version, the `releases/<version>/` directory and a closing
+Q1 through `1.5.0` for Q5, then one per optional extra): the `pom.xml` version, the `releases/<version>/` directory and a closing
 `tagDatabase` changeset all carry the same number, so a rollback can target any release tag.
 Applied changesets are never edited; a fix is a new changeset.
 

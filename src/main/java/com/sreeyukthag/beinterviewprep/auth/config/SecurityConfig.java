@@ -30,6 +30,10 @@ class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth.requestMatchers(
                                 "/api/v1/auth/**",
                                 "/actuator/health",
+                                "/api/v1/tasks",
+                                "/api/v1/tasks/**",
+                                "/api/v1/urls",
+                                "/api/v1/urls/**",
                                 "/r/**",
                                 "/error",
                                 "/swagger-ui.html",

@@ -135,30 +135,25 @@ class AccessControlIntegrationTest {
         mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
     }
 
+    @Test
+    void listingTasksIsPublic() throws Exception {
+        mockMvc.perform(get("/api/v1/tasks")).andExpect(status().isOk());
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"/api/v1/tasks", "/api/v1/urls/abc1234/stats"})
-    void featureEndpointsRequireAToken(String path) throws Exception {
-        mockMvc.perform(get(path))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errorCode").value("UNAUTHORIZED"));
+    @ValueSource(strings = {"/api/v1/tasks/00000000-0000-0000-0000-000000000000", "/api/v1/urls/abc1234/stats"})
+    void unknownPublicResourcesReturn404NotUnauthorized(String path) throws Exception {
+        mockMvc.perform(get(path)).andExpect(status().isNotFound());
     }
 
     @Test
-    void shorteningAUrlRequiresAToken() throws Exception {
-        String body = "{\"url\":\"https://example.com\"}";
+    void shorteningAUrlIsPublic() throws Exception {
+        String body = "{\"url\":\"https://example.com/public\"}";
 
         mockMvc.perform(post("/api/v1/urls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void loggedInUserCanUseFeatureEndpoints() throws Exception {
-        String token = client.registerAndLogin(AuthTestClient.uniqueEmail());
-
-        mockMvc.perform(get("/api/v1/tasks").header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isOk());
+                .andExpect(status().isCreated());
     }
 
     @Test

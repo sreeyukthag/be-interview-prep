@@ -39,10 +39,10 @@ class ShortUrlIntegrationTest {
         String url = "https://example.com/dedupe";
         Instant expiresAt = Instant.now().plus(7, ChronoUnit.DAYS);
 
-        ShortUrlResponse first = shortUrlService.shorten(new ShortenUrlRequest(url, null));
-        ShortUrlResponse second = shortUrlService.shorten(new ShortenUrlRequest(url, null));
-        ShortUrlResponse withExpiry = shortUrlService.shorten(new ShortenUrlRequest(url, expiresAt));
-        ShortUrlResponse withSameExpiry = shortUrlService.shorten(new ShortenUrlRequest(url, expiresAt));
+        ShortUrlResponse first = shortUrlService.shorten(new ShortenUrlRequest(url, null, null));
+        ShortUrlResponse second = shortUrlService.shorten(new ShortenUrlRequest(url, null, null));
+        ShortUrlResponse withExpiry = shortUrlService.shorten(new ShortenUrlRequest(url, expiresAt, null));
+        ShortUrlResponse withSameExpiry = shortUrlService.shorten(new ShortenUrlRequest(url, expiresAt, null));
 
         assertThat(second.code()).isEqualTo(first.code());
         assertThat(withExpiry.code()).isNotEqualTo(first.code());
@@ -62,7 +62,7 @@ class ShortUrlIntegrationTest {
     @Test
     void simultaneousShortensOfSameNewUrlReturnOneCodeAndStoreOneRow() throws Exception {
         String url = "https://example.com/race/" + System.nanoTime();
-        ShortenUrlRequest request = new ShortenUrlRequest(url, null);
+        ShortenUrlRequest request = new ShortenUrlRequest(url, null, null);
 
         List<String> codes = runConcurrently(
                 CONCURRENT_SHORTENS, () -> shortUrlService.shorten(request).code());
@@ -74,7 +74,7 @@ class ShortUrlIntegrationTest {
     @Test
     void simultaneousVisitsAreAllCounted() throws Exception {
         String code = shortUrlService
-                .shorten(new ShortenUrlRequest("https://example.com/popular", null))
+                .shorten(new ShortenUrlRequest("https://example.com/popular", null, null))
                 .code();
 
         runConcurrently(CONCURRENT_VISITS, () -> shortUrlService.resolveAndCountVisit(code));

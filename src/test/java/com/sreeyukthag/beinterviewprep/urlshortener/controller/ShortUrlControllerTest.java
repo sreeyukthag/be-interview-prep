@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.sreeyukthag.beinterviewprep.common.exception.ResourceNotFoundException;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlStatsResponse;
+import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortCodeTakenException;
 import com.sreeyukthag.beinterviewprep.urlshortener.service.ShortUrlService;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
@@ -83,6 +84,33 @@ class ShortUrlControllerTest {
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("expiresAt"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ab", "toolong12", "has space", "dot.ted", "slash/x", "emojié"})
+    void shortenRejectsInvalidCustomCodeWithFieldError(String customCode) throws Exception {
+        String body = "{\"url\":\"https://example.com\",\"customCode\":\"" + customCode + "\"}";
+
+        mockMvc.perform(post("/api/v1/urls")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("customCode"));
+        verifyNoInteractions(shortUrlService);
+    }
+
+    @Test
+    void shortenWithTakenCustomCodeReturns409() throws Exception {
+        when(shortUrlService.shorten(any())).thenThrow(new ShortCodeTakenException("promo"));
+        String body = "{\"url\":\"https://example.com\",\"customCode\":\"promo\"}";
+
+        mockMvc.perform(post("/api/v1/urls")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("SHORT_CODE_TAKEN"));
     }
 
     @Test

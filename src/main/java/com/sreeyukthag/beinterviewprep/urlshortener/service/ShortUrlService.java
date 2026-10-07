@@ -5,6 +5,7 @@ import com.sreeyukthag.beinterviewprep.urlshortener.dto.request.ShortenUrlReques
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlStatsResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
+import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortCodeTakenException;
 import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortCodeUnavailableException;
 import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortUrlExpiredException;
 import com.sreeyukthag.beinterviewprep.urlshortener.mapper.ShortUrlMapper;
@@ -39,10 +40,10 @@ public class ShortUrlService {
         // The column stores microseconds; truncating keeps a repeat request equal to the stored expiry.
         Instant expiresAt =
                 request.expiresAt() == null ? null : request.expiresAt().truncatedTo(ChronoUnit.MICROS);
-        String dedupeKey = ShortUrl.dedupeKeyFor(originalUrl, expiresAt);
 
-        ShortUrl shortUrl =
-                repository.findByDedupeKey(dedupeKey).orElseGet(() -> insertWithFreshCode(originalUrl, expiresAt));
+        ShortUrl shortUrl = request.customCode() == null
+                ? findOrInsertWithFreshCode(originalUrl, expiresAt)
+                : claimCustomCode(request.customCode(), originalUrl, expiresAt);
         return mapper.toResponse(shortUrl);
     }
 
@@ -63,6 +64,32 @@ public class ShortUrlService {
 
     private ShortUrl findByCode(String code) {
         return repository.findByCode(code).orElseThrow(() -> new ResourceNotFoundException("Short URL", code));
+    }
+
+    private ShortUrl findOrInsertWithFreshCode(String originalUrl, Instant expiresAt) {
+        String dedupeKey = ShortUrl.dedupeKeyFor(originalUrl, expiresAt);
+        return repository.findByDedupeKey(dedupeKey).orElseGet(() -> insertWithFreshCode(originalUrl, expiresAt));
+    }
+
+    /**
+     * A code already pointing at the same URL and expiry is a client retry and is returned as is; pointing
+     * anywhere else, it belongs to someone else.
+     */
+    private ShortUrl claimCustomCode(String code, String originalUrl, Instant expiresAt) {
+        ShortUrl stored = repository.findByCode(code).orElseGet(() -> insertAlias(code, originalUrl, expiresAt));
+        if (!stored.pointsTo(originalUrl, expiresAt)) {
+            throw new ShortCodeTakenException(code);
+        }
+        return stored;
+    }
+
+    /** Losing the insert race on {@code uk_short_urls_code} defers to whatever the winner stored. */
+    private ShortUrl insertAlias(String code, String originalUrl, Instant expiresAt) {
+        try {
+            return writer.insert(ShortUrl.alias(code, originalUrl, expiresAt));
+        } catch (DataIntegrityViolationException ex) {
+            return repository.findByCode(code).orElseThrow(() -> ex);
+        }
     }
 
     /**

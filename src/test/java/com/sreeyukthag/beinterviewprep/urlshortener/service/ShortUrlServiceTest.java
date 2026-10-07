@@ -15,6 +15,7 @@ import com.sreeyukthag.beinterviewprep.urlshortener.dto.request.ShortenUrlReques
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlStatsResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
+import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortCodeTakenException;
 import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortCodeUnavailableException;
 import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortUrlExpiredException;
 import com.sreeyukthag.beinterviewprep.urlshortener.mapper.ShortUrlMapper;
@@ -59,7 +60,7 @@ class ShortUrlServiceTest {
         when(codeGenerator.generate()).thenReturn("abc1234");
         when(writer.insert(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null));
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null, null));
 
         assertThat(response.code()).isEqualTo("abc1234");
         assertThat(response.shortUrl()).isEqualTo("http://sho.rt/r/abc1234");
@@ -73,7 +74,7 @@ class ShortUrlServiceTest {
         ShortUrl existing = new ShortUrl("exist12", URL, expiresAt);
         when(repository.findByDedupeKey(ShortUrl.dedupeKeyFor(URL, expiresAt))).thenReturn(Optional.of(existing));
 
-        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, expiresAt));
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, expiresAt, null));
 
         assertThat(response.code()).isEqualTo("exist12");
         verifyNoInteractions(writer, codeGenerator);
@@ -87,7 +88,7 @@ class ShortUrlServiceTest {
         when(writer.insert(any(ShortUrl.class)))
                 .thenThrow(new DataIntegrityViolationException("uk_short_urls_dedupe_key"));
 
-        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null));
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null, null));
 
         assertThat(response.code()).isEqualTo("winner1");
         verify(writer, times(1)).insert(any());
@@ -101,7 +102,7 @@ class ShortUrlServiceTest {
                 .thenThrow(new DataIntegrityViolationException("uk_short_urls_code"))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null));
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null, null));
 
         assertThat(response.code()).isEqualTo("free001");
         ArgumentCaptor<ShortUrl> attempts = ArgumentCaptor.forClass(ShortUrl.class);
@@ -114,7 +115,7 @@ class ShortUrlServiceTest {
         when(repository.findByDedupeKey(DEDUPE_KEY)).thenReturn(Optional.empty());
         when(codeGenerator.generate()).thenReturn("taken01");
         when(writer.insert(any(ShortUrl.class))).thenThrow(new DataIntegrityViolationException("uk_short_urls_code"));
-        ShortenUrlRequest request = new ShortenUrlRequest(URL, null);
+        ShortenUrlRequest request = new ShortenUrlRequest(URL, null, null);
 
         ShortCodeUnavailableException ex =
                 assertThrows(ShortCodeUnavailableException.class, () -> service.shorten(request));
@@ -122,6 +123,78 @@ class ShortUrlServiceTest {
         assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(ex.getErrorCode()).isEqualTo("SHORT_CODE_UNAVAILABLE");
         verify(writer, times(ShortUrlService.MAX_INSERT_ATTEMPTS)).insert(any());
+    }
+
+    @Test
+    void shortenWithCustomCodeStoresAliasWithoutDedupeKey() {
+        when(repository.findByCode("promo")).thenReturn(Optional.empty());
+        when(writer.insert(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null, "promo"));
+
+        assertThat(response.code()).isEqualTo("promo");
+        assertThat(response.shortUrl()).isEqualTo("http://sho.rt/r/promo");
+        ArgumentCaptor<ShortUrl> stored = ArgumentCaptor.forClass(ShortUrl.class);
+        verify(writer).insert(stored.capture());
+        assertThat(stored.getValue().getDedupeKey()).isNull();
+        verifyNoInteractions(codeGenerator);
+        verify(repository, never()).findByDedupeKey(anyString());
+    }
+
+    @Test
+    void shortenWithCustomCodeAlreadyPointingAtSameUrlReturnsItWithoutInsert() {
+        when(repository.findByCode("promo")).thenReturn(Optional.of(ShortUrl.alias("promo", URL, null)));
+
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null, "promo"));
+
+        assertThat(response.code()).isEqualTo("promo");
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void shortenWithCustomCodeTakenByAnotherUrlThrowsConflict() {
+        when(repository.findByCode("promo"))
+                .thenReturn(Optional.of(ShortUrl.alias("promo", "https://example.com/other", null)));
+        ShortenUrlRequest request = new ShortenUrlRequest(URL, null, "promo");
+
+        ShortCodeTakenException ex = assertThrows(ShortCodeTakenException.class, () -> service.shorten(request));
+
+        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(ex.getErrorCode()).isEqualTo("SHORT_CODE_TAKEN");
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void shortenWithCustomCodeTakenWithDifferentExpiryThrowsConflict() {
+        Instant expiresAt = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
+        when(repository.findByCode("promo")).thenReturn(Optional.of(ShortUrl.alias("promo", URL, null)));
+        ShortenUrlRequest request = new ShortenUrlRequest(URL, expiresAt, "promo");
+
+        assertThrows(ShortCodeTakenException.class, () -> service.shorten(request));
+    }
+
+    @Test
+    void shortenWithCustomCodeReturnsWinnerWhenConcurrentRetryInsertedSameMapping() {
+        when(repository.findByCode("promo"))
+                .thenReturn(Optional.empty(), Optional.of(ShortUrl.alias("promo", URL, null)));
+        when(writer.insert(any(ShortUrl.class))).thenThrow(new DataIntegrityViolationException("uk_short_urls_code"));
+
+        ShortUrlResponse response = service.shorten(new ShortenUrlRequest(URL, null, "promo"));
+
+        assertThat(response.code()).isEqualTo("promo");
+        verify(writer, times(1)).insert(any());
+    }
+
+    @Test
+    void shortenWithCustomCodeThrowsConflictWhenConcurrentRequestClaimedItForAnotherUrl() {
+        when(repository.findByCode("promo"))
+                .thenReturn(Optional.empty(), Optional.of(ShortUrl.alias("promo", "https://example.com/other", null)));
+        when(writer.insert(any(ShortUrl.class))).thenThrow(new DataIntegrityViolationException("uk_short_urls_code"));
+        ShortenUrlRequest request = new ShortenUrlRequest(URL, null, "promo");
+
+        assertThrows(ShortCodeTakenException.class, () -> service.shorten(request));
+
+        verify(writer, times(1)).insert(any());
     }
 
     @Test

@@ -75,7 +75,8 @@ class OrderPlacementTest {
         PlaceOrderRequest request = new PlaceOrderRequest(
                 List.of(new OrderItemRequest(lamp, 2), new OrderItemRequest(mug, 1), new OrderItemRequest(lamp, 1)));
 
-        OrderResponse order = orderService.place(UUID.randomUUID().toString(), request);
+        OrderResponse order =
+                orderService.place(UUID.randomUUID().toString(), request).order();
 
         assertThat(order.status()).isEqualTo(OrderStatus.PLACED);
         assertThat(order.totalCents()).isEqualTo(3 * 1_500 + 400);

@@ -14,7 +14,9 @@ import com.sreeyukthag.beinterviewprep.catalog.stock.InsufficientStockException;
 import com.sreeyukthag.beinterviewprep.common.exception.ResourceNotFoundException;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.OrderItemResponse;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.OrderResponse;
+import com.sreeyukthag.beinterviewprep.orders.dto.response.PlacedOrder;
 import com.sreeyukthag.beinterviewprep.orders.entity.OrderStatus;
+import com.sreeyukthag.beinterviewprep.orders.exception.IdempotencyKeyReusedException;
 import com.sreeyukthag.beinterviewprep.orders.service.OrderService;
 import java.time.Instant;
 import java.util.List;
@@ -45,14 +47,35 @@ class OrderControllerTest {
 
     @Test
     void placeReturns201WithLocation() throws Exception {
-        when(orderService.place(eq(KEY), any())).thenReturn(sampleOrder());
+        when(orderService.place(eq(KEY), any())).thenReturn(PlacedOrder.created(sampleOrder()));
 
         mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "/api/v1/orders/" + ORDER_ID))
+                .andExpect(header().doesNotExist("Idempotent-Replayed"))
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("PLACED"))
                 .andExpect(jsonPath("$.data.totalCents").value(2_000));
+    }
+
+    @Test
+    void replayedOrderReturns200WithTheExistingOrder() throws Exception {
+        when(orderService.place(eq(KEY), any())).thenReturn(PlacedOrder.replayed(sampleOrder()));
+
+        mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Idempotent-Replayed", "true"))
+                .andExpect(header().doesNotExist("Location"))
+                .andExpect(jsonPath("$.data.id").value(ORDER_ID.toString()));
+    }
+
+    @Test
+    void reusedKeyWithADifferentBodyReturns422() throws Exception {
+        when(orderService.place(eq(KEY), any())).thenThrow(new IdempotencyKeyReusedException(KEY));
+
+        mockMvc.perform(placeRequest(VALID_BODY).header("Idempotency-Key", KEY))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errorCode").value("IDEMPOTENCY_KEY_REUSED"));
     }
 
     @Test

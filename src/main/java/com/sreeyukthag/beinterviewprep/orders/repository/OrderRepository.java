@@ -10,4 +10,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     @EntityGraph(attributePaths = "items")
     Optional<Order> findWithItemsById(UUID id);
+
+    @EntityGraph(attributePaths = "items")
+    Optional<Order> findWithItemsByIdempotencyKey(String idempotencyKey);
 }

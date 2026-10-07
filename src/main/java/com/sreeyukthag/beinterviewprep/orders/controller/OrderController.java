@@ -3,6 +3,7 @@ package com.sreeyukthag.beinterviewprep.orders.controller;
 import com.sreeyukthag.beinterviewprep.common.web.ApiResponse;
 import com.sreeyukthag.beinterviewprep.orders.dto.request.PlaceOrderRequest;
 import com.sreeyukthag.beinterviewprep.orders.dto.response.OrderResponse;
+import com.sreeyukthag.beinterviewprep.orders.dto.response.PlacedOrder;
 import com.sreeyukthag.beinterviewprep.orders.service.OrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderController {
 
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+    public static final String REPLAYED_HEADER = "Idempotent-Replayed";
 
     private final OrderService orderService;
 
@@ -35,9 +37,13 @@ public class OrderController {
                             message = "must be 1-64 letters, digits, '-' or '_' (a UUID works)")
                     String idempotencyKey,
             @Valid @RequestBody PlaceOrderRequest request) {
-        OrderResponse order = orderService.place(idempotencyKey, request);
-        return ResponseEntity.created(URI.create("/api/v1/orders/" + order.id()))
-                .body(ApiResponse.ok(order));
+        PlacedOrder placed = orderService.place(idempotencyKey, request);
+        if (placed.replayed()) {
+            return ResponseEntity.ok().header(REPLAYED_HEADER, "true").body(ApiResponse.ok(placed.order()));
+        }
+        return ResponseEntity.created(
+                        URI.create("/api/v1/orders/" + placed.order().id()))
+                .body(ApiResponse.ok(placed.order()));
     }
 
     @GetMapping("/{id}")

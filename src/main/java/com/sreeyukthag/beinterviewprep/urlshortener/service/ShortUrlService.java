@@ -5,6 +5,7 @@ import com.sreeyukthag.beinterviewprep.urlshortener.dto.request.ShortenUrlReques
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlStatsResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
+import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortUrlExpiredException;
 import com.sreeyukthag.beinterviewprep.urlshortener.mapper.ShortUrlMapper;
 import com.sreeyukthag.beinterviewprep.urlshortener.repository.ShortUrlRepository;
 import java.time.Instant;
@@ -39,6 +40,16 @@ public class ShortUrlService {
     @Transactional(readOnly = true)
     public ShortUrlStatsResponse stats(String code) {
         return mapper.toStatsResponse(findByCode(code));
+    }
+
+    @Transactional
+    public String resolveAndCountVisit(String code) {
+        ShortUrl shortUrl = findByCode(code);
+        if (shortUrl.isExpiredAt(Instant.now())) {
+            throw new ShortUrlExpiredException(code);
+        }
+        repository.incrementVisitCount(code);
+        return shortUrl.getOriginalUrl();
     }
 
     private ShortUrl findByCode(String code) {

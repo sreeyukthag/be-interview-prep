@@ -14,6 +14,7 @@ import com.sreeyukthag.beinterviewprep.urlshortener.dto.request.ShortenUrlReques
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.dto.response.ShortUrlStatsResponse;
 import com.sreeyukthag.beinterviewprep.urlshortener.entity.ShortUrl;
+import com.sreeyukthag.beinterviewprep.urlshortener.exception.ShortUrlExpiredException;
 import com.sreeyukthag.beinterviewprep.urlshortener.mapper.ShortUrlMapper;
 import com.sreeyukthag.beinterviewprep.urlshortener.repository.ShortUrlRepository;
 import java.time.Instant;
@@ -119,5 +120,34 @@ class ShortUrlServiceTest {
         when(repository.findByCode("missing")).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.stats("missing"));
+    }
+
+    @Test
+    void resolveAndCountVisitIncrementsAndReturnsOriginalUrl() {
+        when(repository.findByCode("abc1234")).thenReturn(Optional.of(new ShortUrl("abc1234", URL, null)));
+
+        String target = service.resolveAndCountVisit("abc1234");
+
+        assertThat(target).isEqualTo(URL);
+        verify(repository).incrementVisitCount("abc1234");
+    }
+
+    @Test
+    void resolveAndCountVisitForExpiredCodeThrowsGoneWithoutCounting() {
+        Instant past = Instant.now().minus(1, ChronoUnit.HOURS);
+        when(repository.findByCode("old1234")).thenReturn(Optional.of(new ShortUrl("old1234", URL, past)));
+
+        assertThrows(ShortUrlExpiredException.class, () -> service.resolveAndCountVisit("old1234"));
+
+        verify(repository, never()).incrementVisitCount(anyString());
+    }
+
+    @Test
+    void resolveAndCountVisitForUnknownCodeThrowsNotFoundWithoutCounting() {
+        when(repository.findByCode("missing")).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> service.resolveAndCountVisit("missing"));
+
+        verify(repository, never()).incrementVisitCount(anyString());
     }
 }

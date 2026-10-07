@@ -1,13 +1,19 @@
 package com.sreeyukthag.beinterviewprep.common.web;
 
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.sreeyukthag.beinterviewprep.common.exception.ApiException;
 import jakarta.validation.ConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.MethodParameter;
 import org.springframework.core.annotation.MergedAnnotation;
 import org.springframework.core.annotation.MergedAnnotations;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -84,8 +90,18 @@ public class GlobalExceptionHandler {
         return validationFailed(List.of(new ApiResponse.FieldError(ex.getParameterName(), "is required")));
     }
 
+    @ExceptionHandler(PropertyReferenceException.class)
+    ResponseEntity<ApiResponse<Void>> handleUnknownSortProperty(PropertyReferenceException ex) {
+        return validationFailed(
+                List.of(new ApiResponse.FieldError("sort", "has an unknown property: " + ex.getPropertyName())));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        if (ex.getCause() instanceof MismatchedInputException mismatch
+                && !mismatch.getPath().isEmpty()) {
+            return validationFailed(List.of(new ApiResponse.FieldError(fieldPath(mismatch), "has an invalid value")));
+        }
         return respond(
                 HttpStatus.BAD_REQUEST, ApiResponse.error("MALFORMED_REQUEST", "Request body is missing or malformed"));
     }
@@ -100,6 +116,14 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.NOT_FOUND, ApiResponse.error("NOT_FOUND", "No endpoint for " + ex.getResourcePath()));
     }
 
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ResponseEntity<ApiResponse<Void>> handleConcurrentModification(OptimisticLockingFailureException ex) {
+        return respond(
+                HttpStatus.CONFLICT,
+                ApiResponse.error(
+                        "CONCURRENT_MODIFICATION", "The resource was changed by another request; reload and retry"));
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception ex) {
         log.error("Unhandled exception", ex);
@@ -111,6 +135,13 @@ public class GlobalExceptionHandler {
         MergedAnnotation<RequestHeader> header =
                 MergedAnnotations.from(parameter.getParameterAnnotations()).get(RequestHeader.class);
         return header.isPresent() ? header.getString("name") : parameter.getParameterName();
+    }
+
+    private static String fieldPath(MismatchedInputException ex) {
+        return ex.getPath().stream()
+                .map(JsonMappingException.Reference::getFieldName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("."));
     }
 
     private ResponseEntity<ApiResponse<Void>> validationFailed(List<ApiResponse.FieldError> errors) {

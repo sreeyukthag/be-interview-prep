@@ -2,6 +2,7 @@ package com.sreeyukthag.beinterviewprep.catalog.repository;
 
 import com.sreeyukthag.beinterviewprep.catalog.dto.request.ProductFilter;
 import com.sreeyukthag.beinterviewprep.catalog.entity.Product;
+import com.sreeyukthag.beinterviewprep.catalog.mapper.ProductMapper;
 import java.util.Locale;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
@@ -26,7 +27,7 @@ public final class ProductSpecifications {
         if (!StringUtils.hasText(category)) {
             return null;
         }
-        return (root, query, cb) -> cb.equal(root.get("category"), category.trim());
+        return (root, query, cb) -> cb.equal(root.get("category"), ProductMapper.normalizeCategory(category));
     }
 
     static Specification<Product> priceAtLeast(Long minPriceCents) {

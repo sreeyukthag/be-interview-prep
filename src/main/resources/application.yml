@@ -19,3 +19,9 @@ management:
     web:
       exposure:
         include: health
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      ttl: 15m

@@ -9,3 +9,10 @@ spring:
       ddl-auto: validate
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
+
+app:
+  security:
+    jwt:
+      # Random per test run, so no signing key is ever committed.
+      secret: ${random.value}${random.value}
+      ttl: 15m

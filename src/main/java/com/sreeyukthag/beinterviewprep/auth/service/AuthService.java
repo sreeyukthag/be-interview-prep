@@ -29,6 +29,11 @@ public class AuthService {
         return UserResponse.from(createUser(request.email(), request.password(), Role.USER));
     }
 
+    @Transactional
+    public void registerAdmin(String email, String rawPassword) {
+        createUser(email, rawPassword, Role.ADMIN);
+    }
+
     @Transactional(readOnly = true)
     public TokenResponse login(LoginRequest request) {
         User user = userRepository

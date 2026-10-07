@@ -25,3 +25,6 @@ app:
     jwt:
       secret: ${JWT_SECRET}
       ttl: 15m
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
